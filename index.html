@@ -2,800 +2,936 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>🇵🇹 Portugal Trip — July 2026</title>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>🇵🇹 Portugal 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{background:#080808;color:#E8DDD0;font-family:'EB Garamond',Georgia,serif;min-height:100vh;}
-::-webkit-scrollbar{width:4px;height:4px;}
-::-webkit-scrollbar-track{background:#111;}
-::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px;}
-::selection{background:#C4974A44;}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-@keyframes flash{0%{opacity:1}50%{opacity:.4}100%{opacity:1}}
-.spin{display:inline-block;width:13px;height:13px;border:2px solid #333;border-top-color:#C4974A;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;}
-.fade{animation:fadeIn .25s ease forwards;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root{
+  --bg:#0d0d0d;--bg2:#161616;--bg3:#1e1e1e;--bg4:#2a2a2a;--bg5:#3a3a3c;
+  --gold:#D4A843;--gold-dim:rgba(212,168,67,.18);--red:#FF453A;--green:#32D74B;--blue:#0A84FF;
+  --t1:#F2F2F7;--t2:#AEAEB2;--t3:#6C6C70;--t4:#3a3a3c;
+  --sep:#2c2c2e;--bot:env(safe-area-inset-bottom,16px);--top:env(safe-area-inset-top,0px);
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
+  font-family:'Nunito',-apple-system,BlinkMacSystemFont,sans-serif;}
+#app,#root{height:100%;}
+#sheet-root{position:fixed;inset:0;pointer-events:none;z-index:8999;}
+button{cursor:pointer;border:none;background:none;color:inherit;font-family:inherit;-webkit-appearance:none;}
+input,textarea,select{font-family:inherit;-webkit-appearance:none;}
 a{color:inherit;text-decoration:none;}
-input,textarea,select{font-family:'EB Garamond',Georgia,serif;}
-button{font-family:'EB Garamond',Georgia,serif;}
+::-webkit-scrollbar{display:none;}
+@keyframes slideUp{from{transform:translateY(110%)}to{transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{display:inline-block;width:17px;height:17px;border:2.5px solid #444;
+  border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;}
 </style>
 </head>
 <body>
 <div id="app"></div>
+<div id="sheet-root"></div>
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script type="text/babel" data-presets="react">
-const {useState,useRef,useCallback,useEffect,useMemo} = React;
+const {useState,useRef,useCallback,useEffect} = React;
+const LS_KEY="pt2026v5";
+let _uid=0;const uid=()=>`u${Date.now()}_${++_uid}`;
 
-// API key lives in Netlify environment variables — see claude.js function
-const LS_KEY = "pt2026_v3";
-
-// ── AI ──────────────────────────────────────────────
-async function callClaude(messages, system="", maxTokens=1000) {
-  const body = {model:"claude-haiku-4-5-20251001", max_tokens:maxTokens, messages};
-  if(system) body.system = system;
-  const r = await fetch("/.netlify/functions/claude",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(body)
-  });
-  const d = await r.json();
-  return d.text||"";
+/* ── AI ───────────────────────────────────────── */
+async function callAPI(body){
+  try{
+    const r=await fetch("/.netlify/functions/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const d=await r.json();return d.text||"";
+  }catch{return "";}
 }
-
-async function aiSuggestItem(dayCtx, sectionTitle, sectionType, existing) {
-  const prompt = `Portugal travel expert. Couple, Algarve + Lisbon, July 3–12 2026.
-Day: ${dayCtx}
-Section: ${sectionTitle} (type: ${sectionType})
-Existing items: ${existing.map(i=>i.name||i.label).join(", ")||"none"}
-
-Suggest ONE new ${sectionType==="logistics"?"logistics row":"activity/event"} that fits perfectly.
-Return ONLY valid JSON with these fields:
-${sectionType==="logistics"
-  ? '{"label":"","value":""}'
-  : '{"name":"","time":"","description":"","tip":"","address":"","phone":"","link":"","bookingNote":"","mustOrder":""}'}
-No markdown. Fill only relevant fields, leave others as empty string.`;
-  const t = await callClaude([{role:"user",content:prompt}]);
-  try { return JSON.parse(t.replace(/```json|```/g,"").trim()); } catch { return null; }
+async function aiChat(msg,days,history){
+  const ctx=days.map(d=>`${d.date}:${d.title}`).join(";");
+  return callAPI({model:"claude-haiku-4-5-20251001",max_tokens:500,
+    system:`Warm Portugal trip concierge. Couple, Algarve+Lisbon, July 3-12 2026. Trip:${ctx}. Be specific, practical, max 120 words.`,
+    messages:[...history,{role:"user",content:msg}]});
 }
-
-async function aiEditItem(item, request, ctx) {
-  const t = await callClaude([{role:"user",content:`Portugal travel expert. Edit this for a couple, Algarve + Lisbon, July 3–12 2026.\nContext: ${ctx}\nCurrent: ${JSON.stringify(item)}\nRequest: "${request}"\nReturn ONLY valid JSON, same fields. No markdown.`}]);
-  try { return JSON.parse(t.replace(/```json|```/g,"").trim()); } catch { return null; }
+async function aiEditItem(item,req,ctx){
+  const raw=await callAPI({model:"claude-haiku-4-5-20251001",max_tokens:500,
+    messages:[{role:"user",content:`Portugal travel. Context:${ctx}\nItem:${JSON.stringify(item)}\nRequest:"${req}"\nReturn ONLY valid JSON same fields. No markdown.`}]});
+  try{return JSON.parse(raw.replace(/```json|```/g,"").trim());}catch{return null;}
 }
-
-async function aiChat(msg, days, history) {
-  const summary = days.map(d=>`${d.date} (${d.day}): ${d.title} — ${d.sections.flatMap(s=>s.items).map(i=>i.name||i.label).filter(Boolean).join(", ")}`).join("\n");
-  return await callClaude(
-    [...history,{role:"user",content:msg}],
-    `Expert Portugal travel concierge. Couple, Algarve + Lisbon, July 3–12 2026.\nFull itinerary:\n${summary}\nBe specific, warm, practical. Max 200 words.`,
-    800
-  );
+async function aiSuggest(dayCtx,secTitle,secType,existing){
+  const raw=await callAPI({model:"claude-haiku-4-5-20251001",max_tokens:400,
+    messages:[{role:"user",content:`Portugal travel couple July 2026.\nDay:${dayCtx}\nSection:${secTitle}(${secType})\nExisting:${existing.map(i=>i.name||i.label).filter(Boolean).join(",")||"none"}\nSuggest ONE ${secType==="logistics"?"logistics row":"activity"}.\nJSON only:${secType==="logistics"?'{"label":"","value":""}':'{"name":"","time":"","description":"","tip":"","address":"","phone":"","link":"","bookingNote":"","mustOrder":""}'}\nNo markdown.`}]});
+  try{return JSON.parse(raw.replace(/```json|```/g,"").trim());}catch{return null;}
 }
-
-async function aiPhoto(b64, mime, days) {
-  const places = days.flatMap(d=>d.sections.flatMap(s=>s.items).map(i=>i.name||i.label).filter(Boolean).map(n=>`${d.date}: ${n}`)).join(", ");
-  const r = await fetch("/.netlify/functions/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-    model:"claude-haiku-4-5-20251001",max_tokens:600,
+async function aiPhoto(b64,mime,days){
+  const places=days.flatMap(d=>d.sections.flatMap(s=>s.items).map(i=>i.name||i.label).filter(Boolean).map(n=>`${d.date}:${n}`)).slice(0,20).join(",");
+  const raw=await callAPI({model:"claude-haiku-4-5-20251001",max_tokens:400,
     messages:[{role:"user",content:[
       {type:"image",source:{type:"base64",media_type:mime,data:b64}},
-      {type:"text",text:`Portugal trip photo. Places visited: ${places}. Return ONLY JSON:\n{"dayId":<1-10|null>,"location":"<place>","caption":"<1-sentence first-person>","mood":"<golden|serene|dramatic|vibrant|mysterious|festive|intimate|wild>","story":"<2-3 sentence journal>","tips":["t1","t2","t3"]}`}
-    ]}]
-  })});
-  const d = await r.json();
-  try { return JSON.parse((d.content?.[0]?.text||"{}").replace(/```json|```/g,"").trim()); }
-  catch { return {location:"Portugal",caption:"A beautiful moment.",mood:"golden",story:"An unforgettable scene.",tips:[]}; }
+      {type:"text",text:`Portugal photo. Places:${places}. JSON only:\n{"dayId":<1-10|null>,"location":"","caption":"<first-person 1 sentence>","story":"<2 sentences>","tips":["",""]}`}
+    ]}]});
+  try{return JSON.parse(raw.replace(/```json|```/g,"").trim());}
+  catch{return{location:"Portugal",caption:"A beautiful moment.",story:"",tips:[]};}
 }
 
-// ── INITIAL DATA ────────────────────────────────────
-const INITIAL_DAYS = [
-  {id:1,date:"July 3",day:"Thursday",label:"ARRIVE",title:"Land in Lisbon → São Teotônio",theme:"#C4974A",emoji:"✈️",sections:[
+/* ── INITIAL DATA ─────────────────────────────── */
+const DAYS0=[
+  {id:1,date:"July 3",day:"Thu",label:"ARRIVE",title:"Land in Lisbon → São Teotônio",theme:"#C4974A",emoji:"✈️",sections:[
     {id:"s1a",type:"logistics",title:"Flight & Arrival",icon:"✈️",items:[
-      {id:"i1",label:"Flight",value:"EWR → LIS departing July 2 at 8:25 PM ET"},
-      {id:"i2",label:"Land",value:"Lisbon Humberto Delgado Airport, 8:20 AM local"},
-      {id:"i3",label:"Car Rental",value:"Budget ~2 hrs for baggage + car pickup at airport"},
-      {id:"i4",label:"Drive",value:"Lisbon → São Teotônio: ~2.5 hrs via A2/IC4"},
-      {id:"i5",label:"Check-in",value:"Airbnb, São Teotônio — arrive ~1:00 PM"},
+      {id:"l1",label:"Flight",value:"EWR → LIS · July 2 · 8:25 PM ET"},
+      {id:"l2",label:"Land",value:"Lisbon Airport · 8:20 AM local"},
+      {id:"l3",label:"Car",value:"~2 hrs for pickup at airport"},
+      {id:"l4",label:"Drive",value:"Lisbon → São Teotônio · 2.5 hrs via A2/IC4"},
+      {id:"l5",label:"Check-in",value:"Airbnb São Teotônio · ~1:00 PM"},
     ]},
     {id:"s1b",type:"activity",title:"Afternoon",icon:"🏖️",items:[
-      {id:"i6",name:"Praia do Carvalhal",time:"3:00–6:00 PM",description:"Wild Atlantic beach flanked by dramatic cliffs — one of the most unspoiled beaches in the Costa Vicentina natural park. Perfect for jet-lag recovery.",tip:"Park at the top and take the wooden walkway down. Bring everything — no services.",link:"https://maps.google.com/?q=Praia+do+Carvalhal+Portugal",address:"Costa Vicentina Natural Park",phone:"",bookingNote:"",mustOrder:""},
+      {id:"a1",name:"Praia do Carvalhal",time:"3:00–6:00 PM",description:"Wild Atlantic beach flanked by dramatic cliffs. One of the most unspoiled beaches on the Costa Vicentina natural park. Perfect for jet-lag recovery.",tip:"Park at top, wooden walkway down. No services — bring everything.",link:"https://maps.google.com/?q=Praia+do+Carvalhal+Portugal",address:"Costa Vicentina Natural Park",phone:"",bookingNote:"",mustOrder:""},
     ]},
     {id:"s1c",type:"dinner",title:"Dinner",icon:"🍽️",items:[
-      {id:"i7",name:"Low-key evening in São Teotônio",time:"7:30 PM",description:"Rest and recover. Simple dinner in town or cook at the Airbnb. Big days ahead.",tip:"Stock up at a local supermercado — long driving day tomorrow.",link:"",address:"",phone:"",bookingNote:"",mustOrder:""},
+      {id:"a2",name:"Low-key São Teotônio",time:"7:30 PM",description:"Rest and recover. Simple dinner in town or cook at the Airbnb.",tip:"Stock up at a supermercado — long drive day tomorrow.",link:"",address:"",phone:"",bookingNote:"",mustOrder:""},
     ]},
   ]},
-  {id:2,date:"July 4",day:"Friday",label:"LAGOS",title:"Cabo de São Vicente → Lagos → Kayaking",theme:"#2D7DD2",emoji:"🛶",sections:[
-    {id:"s2a",type:"activity",title:"Morning Stop",icon:"🏔️",items:[
-      {id:"i8",name:"Cabo de São Vicente",time:"Opens 10:00 AM — arrive by 10:15 AM",description:"The southwestern tip of mainland Europe. 70-meter sheer cliffs plunging into the Atlantic. Lighthouse, fortress ruins, and the feeling of standing at the edge of the known world.",tip:"Go early — tour buses pack it by 11:30 AM. Strong winds are the norm; bring a layer.",link:"https://maps.google.com/?q=Cabo+de+Sao+Vicente+Portugal",address:"8650-196 Sagres, Portugal",phone:"",bookingNote:"",mustOrder:""},
+  {id:2,date:"July 4",day:"Fri",label:"LAGOS",title:"Cabo de São Vicente → Lagos → Kayaking",theme:"#2D7DD2",emoji:"🛶",sections:[
+    {id:"s2a",type:"activity",title:"Morning",icon:"🏔️",items:[
+      {id:"a3",name:"Cabo de São Vicente",time:"Arrive 10:15 AM",description:"Southwestern tip of mainland Europe. 70m sheer cliffs, lighthouse, fortress ruins — the edge of the known world.",tip:"Tour buses pack it by 11:30 AM. Strong winds; bring a layer.",link:"https://maps.google.com/?q=Cabo+de+Sao+Vicente+Portugal",address:"8650-196 Sagres",phone:"",bookingNote:"",mustOrder:""},
     ]},
     {id:"s2b",type:"logistics",title:"Hotel Check-In",icon:"🏨",items:[
-      {id:"i9",label:"Hotel",value:"Iberostar Selection Lagos"},
-      {id:"i10",label:"Address",value:"Rua Vítor Córdon 25, 8600-769 Lagos"},
-      {id:"i11",label:"Check-in",value:"3:00 PM (bags can be stored early)"},
-      {id:"i12",label:"Drive from Cabo",value:"~45 min east on N268/IC4"},
+      {id:"l6",label:"Hotel",value:"Iberostar Selection Lagos"},
+      {id:"l7",label:"Address",value:"Rua Vítor Córdon 25, 8600-769 Lagos"},
+      {id:"l8",label:"Check-in",value:"3:00 PM (store bags early)"},
+      {id:"l9",label:"Drive",value:"~45 min east on N268/IC4"},
     ]},
-    {id:"s2c",type:"activity",title:"Afternoon — ⭐ MUST-DO",icon:"🛶",items:[
-      {id:"i13",name:"Ponta da Piedade Kayak Tour",time:"Multiple departures — book 9:00 AM or 2:30 PM slot",description:"The single best activity in western Algarve. Catamaran from Lagos Marina, then kayak through golden rock arches and hidden sea caves that boats can't reach. 2 hrs 15 min. ~€47/person.",tip:"Book morning slot for calmer water. Meet 15 min early at Gates EFGHI, Marina de Lagos. Wear swimwear — you WILL get wet.",link:"https://www.viator.com/tours/Lagos/Kayaking-Tour-from-Lagos/d23572-49301P1",bookingNote:"🔴 BOOK NOW on Viator — sells out weeks ahead in July",address:"Marina de Lagos, Gates EFGHI",phone:"",mustOrder:""},
+    {id:"s2c",type:"activity",title:"Afternoon ⭐ MUST-DO",icon:"🛶",items:[
+      {id:"a4",name:"Ponta da Piedade Kayak Tour",time:"9:00 AM or 2:30 PM",description:"Best activity in western Algarve. Catamaran from Lagos Marina, then kayak through golden rock arches and sea caves boats can't reach. ~2h15. ~€47/person.",tip:"Morning = calmer water. Gates EFGHI, Marina de Lagos. Wear swimwear.",link:"https://www.viator.com/tours/Lagos/Kayaking-Tour-from-Lagos/d23572-49301P1",bookingNote:"🔴 BOOK NOW — sells out weeks ahead",address:"Marina de Lagos, Gates EFGHI",phone:"",mustOrder:""},
     ]},
     {id:"s2d",type:"dinner",title:"Dinner",icon:"🍽️",items:[
-      {id:"i14",name:"Don Sebastião",time:"7:30–10:00 PM",description:"Classic Algarvian institution open since 1979. Underground wine cellar, brick archways, azulejo tiles. Famous for cataplana, grilled sea bass, and live music.",mustOrder:"Seafood cataplana · Grilled sea bass (whole) · Mussels in white wine · Crème brûlée",tip:"Won't hold a table past 8 PM without a reservation.",address:"R. 25 de Abril 20-22, 8600-763 Lagos",phone:"+351 282 780 480",link:"http://www.restaurantedonsebastiao.com",bookingNote:"🔴 BOOK NOW — call or email weeks ahead"},
+      {id:"a5",name:"Don Sebastião",time:"7:30 PM",description:"Classic Algarvian institution since 1979. Underground wine cellar, brick archways, azulejo tiles. Cataplana, grilled sea bass, live music.",mustOrder:"Seafood cataplana · Grilled sea bass · Mussels · Crème brûlée",tip:"Won't hold table past 8 PM without reservation.",address:"R. 25 de Abril 20-22, Lagos",phone:"+351 282 780 480",link:"http://www.restaurantedonsebastiao.com",bookingNote:"🔴 BOOK NOW"},
     ]},
   ]},
-  {id:3,date:"July 5",day:"Saturday",label:"LAGOS",title:"Dona Ana Beach + Old Town",theme:"#E07B39",emoji:"🏛️",sections:[
-    {id:"s3a",type:"activity",title:"Morning — Beach",icon:"🏖️",items:[
-      {id:"i15",name:"Praia de Dona Ana",time:"Arrive by 9:00–9:30 AM (critical in July)",description:"Lagos' most beautiful sheltered cove. Dramatic ochre-orange cliff formations, turquoise water, golden sand. Only ~200m wide — fills up fast.",tip:"Park at the small lot above. Steps down. Stay until noon then head into town.",link:"https://maps.google.com/?q=Praia+Dona+Ana+Lagos",address:"",phone:"",bookingNote:"",mustOrder:""},
+  {id:3,date:"July 5",day:"Sat",label:"LAGOS",title:"Dona Ana Beach + Old Town",theme:"#E07B39",emoji:"🏛️",sections:[
+    {id:"s3a",type:"activity",title:"Morning",icon:"🏖️",items:[
+      {id:"a6",name:"Praia de Dona Ana",time:"Arrive 9:00–9:30 AM",description:"Lagos' most beautiful sheltered cove. Ochre-orange cliffs, turquoise water, golden sand. Only ~200m wide — fills fast.",tip:"Park above. Steps down. Leave by noon.",link:"https://maps.google.com/?q=Praia+Dona+Ana+Lagos",address:"",phone:"",bookingNote:"",mustOrder:""},
     ]},
-    {id:"s3b",type:"activity",title:"Afternoon — Old Town",icon:"🏛️",items:[
-      {id:"i16",name:"Lagos Historic Centre Walk",time:"1:00–5:00 PM",description:"Self-guided walk through one of the best-preserved historic towns in Portugal. Highlights: Igreja de Santo António (gilded baroque, €3), Mercado de Escravos — world's first slave market (€4), Fortaleza da Ponta da Bandeira (€3).",tip:"Churches close midday 12:30–2 PM. Plan museum visits accordingly.",link:"https://maps.google.com/?q=Lagos+Old+Town+Portugal",address:"",phone:"",bookingNote:"",mustOrder:""},
+    {id:"s3b",type:"activity",title:"Afternoon",icon:"🏛️",items:[
+      {id:"a7",name:"Lagos Historic Centre Walk",time:"1:00–5:00 PM",description:"One of Portugal's best-preserved towns. Igreja Santo António (€3), Mercado de Escravos — world's first slave market (€4), Fortaleza da Ponta da Bandeira (€3).",tip:"Churches close 12:30–2 PM.",link:"https://maps.google.com/?q=Lagos+Old+Town+Portugal",address:"",phone:"",bookingNote:"",mustOrder:""},
     ]},
-    {id:"s3c",type:"dinner",title:"Dinner — ⭐ HIGHLIGHT",icon:"🍽️",items:[
-      {id:"i17",name:"Restaurante dos Artistas",time:"6:30 PM · CLOSED SUNDAYS",description:"250-year-old building with walled garden terrace. Chef Robson Reiter produces elevated Portuguese fusion: Thai consommé, duck fillet, chocolate garden dessert.",mustOrder:"5-course tasting menu · Duck fillet · Chocolate garden dessert",tip:"Book weeks ahead. Reservations require confirmation by email or phone.",address:"R. Cândido dos Reis 68, 8600-681 Lagos",phone:"+351 282 760 659",link:"https://www.artistasrestaurant.com/reservations",bookingNote:"🔴 BOOK NOW — confirm via email or phone"},
+    {id:"s3c",type:"dinner",title:"Dinner ⭐",icon:"🍽️",items:[
+      {id:"a8",name:"Restaurante dos Artistas",time:"6:30 PM · CLOSED SUNDAYS",description:"250-year-old building with walled garden terrace. Chef Robson Reiter: elevated Portuguese fusion. Thai consommé, duck fillet, chocolate garden dessert.",mustOrder:"5-course tasting menu · Duck fillet · Chocolate garden",tip:"Book weeks ahead.",address:"R. Cândido dos Reis 68, Lagos",phone:"+351 282 760 659",link:"https://www.artistasrestaurant.com/reservations",bookingNote:"🔴 BOOK NOW"},
     ]},
   ]},
-  {id:4,date:"July 6",day:"Sunday",label:"WINE DAY",title:"Quinta dos Vales + Silves Castle",theme:"#7B3F8C",emoji:"🍷",sections:[
+  {id:4,date:"July 6",day:"Sun",label:"WINE",title:"Quinta dos Vales + Silves Castle",theme:"#7B3F8C",emoji:"🍷",sections:[
     {id:"s4a",type:"activity",title:"Morning — Winery",icon:"🍷",items:[
-      {id:"i18",name:"Quinta dos Vales Wine Estate",time:"Free tasting daily 10 AM–3 PM",description:"44-hectare estate in Estômbar, 25 min from Lagos. Award-winning winery with 100+ international awards. Walk-in tasting available Sundays — guided tour weekdays only.",tip:"July 6 is Sunday — call ahead to confirm walk-in availability.",address:"Sítio dos Vales, 8400-031 Estômbar",phone:"+351 282 431 036",link:"https://quintadosvales.pt/en/wine/",bookingNote:"📞 Call 48hrs ahead for guided tour (Mon–Fri only)",mustOrder:""},
+      {id:"a9",name:"Quinta dos Vales Wine Estate",time:"Tasting 10 AM–3 PM",description:"44-hectare estate 25 min from Lagos. 100+ international awards. Walk-in tasting on Sundays.",tip:"Sunday — call ahead to confirm walk-in.",address:"Sítio dos Vales, 8400-031 Estômbar",phone:"+351 282 431 036",link:"https://quintadosvales.pt/en/wine/",bookingNote:"📞 Call 48hrs ahead for guided tour",mustOrder:""},
     ]},
     {id:"s4b",type:"activity",title:"Afternoon",icon:"🏰",items:[
-      {id:"i19",name:"Silves Castle & Medina",time:"1:30–4:00 PM",description:"Ancient Moorish capital of the Algarve. Striking red sandstone castle — walk the ramparts for sweeping views of the Arade River valley. Gothic Sé Catedral worth 20 min inside.",tip:"Parking by the river is easiest. Castle admission ~€2.80.",address:"R. da Sé, 8300-144 Silves",link:"https://maps.google.com/?q=Castelo+de+Silves",phone:"",bookingNote:"",mustOrder:""},
+      {id:"a10",name:"Silves Castle & Medina",time:"1:30–4:00 PM",description:"Ancient Moorish capital of the Algarve. Red sandstone castle with sweeping views of the Arade River valley.",tip:"Parking by the river is easiest. Admission ~€2.80.",address:"R. da Sé, 8300-144 Silves",link:"https://maps.google.com/?q=Castelo+de+Silves",phone:"",bookingNote:"",mustOrder:""},
     ]},
-    {id:"s4c",type:"dinner",title:"Dinner (Sunday Alt)",icon:"🍽️",items:[
-      {id:"i20",name:"Tasca Jota — Lagos",time:"7:00–10:30 PM",description:"Modern Portuguese tapas in a stone and exposed beam dining room in Lagos old town. Casinha do Petisco is closed Sundays — Tasca Jota is the worthy alternative.",tip:"Book ahead. Casinha do Petisco moves to Monday July 7.",address:"R. António Barbosa Viana 17, Lagos",link:"https://maps.google.com/?q=Tasca+Jota+Lagos",phone:"",bookingNote:"",mustOrder:""},
-    ]},
-  ]},
-  {id:5,date:"July 7",day:"Monday",label:"BEACH DAY",title:"Meia Praia Full Beach Day",theme:"#2D9E6B",emoji:"🏝️",sections:[
-    {id:"s5a",type:"activity",title:"Full Day Beach",icon:"🏖️",items:[
-      {id:"i21",name:"Praia de Meia Praia",time:"9:00 AM – 5:00 PM",description:"4km of unbroken golden sand with calm, warm water — the longest and most relaxed beach near Lagos. Paddleboards and kayaks for hire on the beach.",tip:"Arrive by 9:30 AM. Eastern end is less crowded.",link:"https://maps.google.com/?q=Meia+Praia+Lagos",address:"",phone:"",bookingNote:"",mustOrder:""},
-      {id:"i22",name:"Lunch at Bar Quim",time:"12:30–2:00 PM",description:"Famous beachside spot serving garlic butter prawns talked about for 20+ years. Simple, grilled, unfussy.",tip:"Arrive before 12:30 PM or expect a wait. Cash preferred.",link:"https://maps.google.com/?q=Bar+Quim+Meia+Praia+Lagos",address:"",phone:"",bookingNote:"",mustOrder:""},
-    ]},
-    {id:"s5b",type:"dinner",title:"Dinner — 🔴 LEGENDARY",icon:"🍽️",items:[
-      {id:"i23",name:"Casinha do Petisco",time:"6:00–10:30 PM · Until 7:30 PM · CASH ONLY",description:"Legendary family-run spot — husband cooks, wife and son serve. Only 8–10 tables. The prawn and clam cataplana is one of the most talked-about dishes in all of Lagos.",mustOrder:"Cataplana de marisco · Grilled whole sea bream · Clams bulhão pato",tip:"CASH ONLY — stop at an ATM before dinner. Budget ~€30–40/person.",address:"R. da Oliveira 51, 8600-700 Lagos",link:"https://casinhadopetisco.pt/",phone:"",bookingNote:"🔴 CASH ONLY — bring €80+ cash"},
+    {id:"s4c",type:"dinner",title:"Dinner",icon:"🍽️",items:[
+      {id:"a11",name:"Tasca Jota — Lagos",time:"7:00–10:30 PM",description:"Modern Portuguese tapas. Casinha do Petisco is closed Sundays — this is the worthy alternative.",tip:"Book ahead.",address:"R. António Barbosa Viana 17, Lagos",link:"https://maps.google.com/?q=Tasca+Jota+Lagos",phone:"",bookingNote:"",mustOrder:""},
     ]},
   ]},
-  {id:6,date:"July 8",day:"Tuesday",label:"MOVE",title:"Praia da Marinha → Domes Lake Check-In",theme:"#1B6CA8",emoji:"🌊",sections:[
-    {id:"s6a",type:"activity",title:"Morning — Most Beautiful Beach in Portugal",icon:"🌊",items:[
-      {id:"i24",name:"Praia da Marinha",time:"Arrive 8:30–9:00 AM — parking fills by 10 AM",description:"Consistently rated Portugal's most photogenic beach. Double sea arch, rust-orange limestone cliffs, emerald rock pools, turquoise water.",tip:"Park immediately in upper lot. Swim through the arch at low tide — check tide times the night before. Leave by 11:30 AM.",link:"https://maps.google.com/?q=Praia+da+Marinha+Algarve",address:"Praia da Marinha, 8400-450 Lagoa",phone:"",bookingNote:"",mustOrder:""},
+  {id:5,date:"July 7",day:"Mon",label:"BEACH",title:"Meia Praia Full Beach Day",theme:"#2D9E6B",emoji:"🏝️",sections:[
+    {id:"s5a",type:"activity",title:"Full Day",icon:"🏖️",items:[
+      {id:"a12",name:"Praia de Meia Praia",time:"9:00 AM – 5:00 PM",description:"4km of golden sand with calm warm water. Longest, most relaxed beach near Lagos. Paddleboards and kayaks for hire.",tip:"Arrive by 9:30 AM. Eastern end less crowded.",link:"https://maps.google.com/?q=Meia+Praia+Lagos",address:"",phone:"",bookingNote:"",mustOrder:""},
+      {id:"a13",name:"Lunch at Bar Quim",time:"12:30–2:00 PM",description:"Famous beachside garlic butter prawns talked about for 20+ years. Simple, grilled, unfussy.",tip:"Arrive before 12:30 or wait. Cash preferred.",link:"https://maps.google.com/?q=Bar+Quim+Meia+Praia+Lagos",address:"",phone:"",bookingNote:"",mustOrder:""},
+    ]},
+    {id:"s5b",type:"dinner",title:"Dinner 🔴 LEGENDARY",icon:"🍽️",items:[
+      {id:"a14",name:"Casinha do Petisco",time:"6:00 PM · CASH ONLY",description:"Legendary family-run spot. Husband cooks, wife and son serve. Only 8–10 tables. The prawn and clam cataplana is one of the most talked-about dishes in Lagos.",mustOrder:"Cataplana de marisco · Sea bream · Clams bulhão pato",tip:"CASH ONLY — ATM before dinner. ~€30–40/person.",address:"R. da Oliveira 51, Lagos",link:"https://casinhadopetisco.pt/",phone:"",bookingNote:"🔴 CASH ONLY — bring €80+ cash"},
+    ]},
+  ]},
+  {id:6,date:"July 8",day:"Tue",label:"MOVE",title:"Praia da Marinha → Domes Lake",theme:"#1B6CA8",emoji:"🌊",sections:[
+    {id:"s6a",type:"activity",title:"Morning — Best Beach in Portugal",icon:"🌊",items:[
+      {id:"a15",name:"Praia da Marinha",time:"Arrive 8:30–9:00 AM",description:"Consistently rated Portugal's most photogenic beach. Double sea arch, rust-orange limestone cliffs, emerald rock pools, turquoise water.",tip:"Parking fills by 10 AM. Swim through the arch at low tide. Leave by 11:30.",link:"https://maps.google.com/?q=Praia+da+Marinha+Algarve",address:"8400-450 Lagoa",phone:"",bookingNote:"",mustOrder:""},
     ]},
     {id:"s6b",type:"logistics",title:"Hotel Check-In",icon:"🏨",items:[
-      {id:"i25",label:"Hotel",value:"Domes Lake Algarve, Autograph Collection"},
-      {id:"i26",label:"Address",value:"Praia de Falésia, 8200-593 Albufeira"},
-      {id:"i27",label:"Drive from Marinha",value:"~20 min east"},
-      {id:"i28",label:"Check-in",value:"3:00 PM"},
-      {id:"i29",label:"Highlights",value:"400m to Falésia Beach · Private saltwater lake · 3 pools · Adults-Only Sora beach club"},
+      {id:"l10",label:"Hotel",value:"Domes Lake Algarve, Autograph Collection"},
+      {id:"l11",label:"Address",value:"Praia de Falésia, 8200-593 Albufeira"},
+      {id:"l12",label:"Drive",value:"~20 min east from Marinha"},
+      {id:"l13",label:"Check-in",value:"3:00 PM"},
+      {id:"l14",label:"Highlights",value:"Falésia Beach · Saltwater lake · 3 pools · Sora beach club"},
     ]},
     {id:"s6c",type:"dinner",title:"Dinner",icon:"🍽️",items:[
-      {id:"i30",name:"Casa do Pescador",time:"7:00–10:30 PM",description:"Vilamoura Marina institution. Grilled seabass, octopus salad, prawns, local wines in a garden setting.",mustOrder:"Whole grilled seabass · Octopus salad · Garlic prawns",tip:"Book ahead — marina restaurants fill fast in summer.",address:"Marina de Vilamoura",link:"https://maps.google.com/?q=Casa+do+Pescador+Vilamoura",phone:"",bookingNote:"📞 Recommended to book ahead"},
+      {id:"a16",name:"Casa do Pescador",time:"7:00–10:30 PM",description:"Vilamoura Marina institution. Grilled seabass, octopus salad, prawns, local wines in a garden setting.",mustOrder:"Whole grilled seabass · Octopus salad · Garlic prawns",tip:"Book ahead — marina fills fast in summer.",address:"Marina de Vilamoura",link:"https://maps.google.com/?q=Casa+do+Pescador+Vilamoura",phone:"",bookingNote:"📞 Book ahead"},
     ]},
   ]},
-  {id:7,date:"July 9",day:"Wednesday",label:"EPIC",title:"7 Valleys Hike + Benagil + ⭐⭐ Ocean",theme:"#B5172A",emoji:"⭐",sections:[
-    {id:"s7a",type:"activity",title:"Morning Hike — START EARLY",icon:"🥾",items:[
-      {id:"i31",name:"Percurso dos Sete Vales Suspensos",time:"Start 8:00–8:30 AM at Praia da Marinha",description:"One of the most spectacular coastal hikes in Europe. 5.7km from Praia da Marinha to Praia de Benagil. Aerial views of sea arches, turquoise coves, and Benagil Cave from above. 3–4 hours.",tip:"Bring 1.5L water each, sunscreen, hat. Zero shade. Wear proper shoes.",link:"https://www.alltrails.com/trail/portugal/faro/percurso-dos-sete-vales-suspensos",address:"Trailhead: Praia da Marinha parking lot",phone:"",bookingNote:"",mustOrder:""},
+  {id:7,date:"July 9",day:"Wed",label:"EPIC",title:"7 Valleys Hike + Benagil + ⭐⭐ Ocean",theme:"#B5172A",emoji:"⭐",sections:[
+    {id:"s7a",type:"activity",title:"Morning — START EARLY",icon:"🥾",items:[
+      {id:"a17",name:"Sete Vales Suspensos Hike",time:"Start 8:00 AM at Praia da Marinha",description:"Most spectacular coastal hike in Europe. 5.7km. Aerial views of sea arches, turquoise coves, and Benagil Cave from above. 3–4 hours.",tip:"1.5L water each, sunscreen, hat. Zero shade. Proper shoes.",link:"https://www.alltrails.com/trail/portugal/faro/percurso-dos-sete-vales-suspensos",address:"Trailhead: Praia da Marinha parking",phone:"",bookingNote:"",mustOrder:""},
     ]},
-    {id:"s7b",type:"activity",title:"Early Afternoon",icon:"⛵",items:[
-      {id:"i32",name:"Benagil Cave Boat Tour",time:"12:30–2:00 PM",description:"The iconic cave with a beach inside and a hole in the roof. Boat tours circle through for photos. ~45 min. ~€15–20/person.",tip:"Book in advance on GetYourGuide. Smaller RIB boats get closest.",link:"https://www.getyourguide.com/benagil-l142720/",bookingNote:"📅 Book on GetYourGuide — sells out daily",address:"",phone:"",mustOrder:""},
+    {id:"s7b",type:"activity",title:"Afternoon",icon:"⛵",items:[
+      {id:"a18",name:"Benagil Cave Boat Tour",time:"12:30–2:00 PM",description:"The iconic cave with a beach inside and a hole in the roof. ~45 min. ~€15–20/person.",tip:"Book GetYourGuide. Smaller RIB boats get closest.",link:"https://www.getyourguide.com/benagil-l142720/",bookingNote:"📅 Book ahead — sells out daily",address:"",phone:"",mustOrder:""},
     ]},
-    {id:"s7c",type:"dinner",title:"Dinner — 🌟🌟 TWO MICHELIN STARS",icon:"⭐",items:[
-      {id:"i33",name:"Ocean Restaurant at Vila Vita Parc",time:"7:00–10:00 PM · Arrive 7:00 PM",description:"The best restaurant in the Algarve. Two Michelin stars since 2011. Chef Hans Neuner creates 14-course tasting menus inspired by Portugal's Age of Discovery. 35 seats.",mustOrder:"14-course tasting menu: €275/person · Wine pairing: €175 standard / €360 premium",tip:"Dress code: elegant evening wear. No children under 12. Allow 3.5–4 hours.",address:"Vila Vita Parc Resort, Alporchinhos, 8400-450 Porches",phone:"+351 282 310 100",link:"https://vilavitaparc.com/en/restaurantsandbars/ocean-restaurant",bookingNote:"🔴 3-MONTH WAIT IN SUMMER — BOOK IMMEDIATELY"},
+    {id:"s7c",type:"dinner",title:"Dinner 🌟🌟 MICHELIN",icon:"⭐",items:[
+      {id:"a19",name:"Ocean Restaurant — Vila Vita Parc",time:"7:00 PM",description:"Best restaurant in the Algarve. Two Michelin stars since 2011. Chef Hans Neuner's 14-course menu inspired by Portugal's Age of Discovery. 35 seats.",mustOrder:"14-course menu: €275/person · Wine pairing €175–€360",tip:"Elegant evening wear. Allow 3.5–4 hours.",address:"Vila Vita Parc, Alporchinhos, Porches",phone:"+351 282 310 100",link:"https://vilavitaparc.com/en/restaurantsandbars/ocean-restaurant",bookingNote:"🔴 3-MONTH WAIT — BOOK IMMEDIATELY"},
     ]},
   ]},
-  {id:8,date:"July 10",day:"Thursday",label:"RESORT",title:"Falésia Beach + Catamaran + ⭐ Willie's",theme:"#2D7DD2",emoji:"🌅",sections:[
-    {id:"s8a",type:"activity",title:"Morning — Beach",icon:"🏖️",items:[
-      {id:"i34",name:"Praia de Falésia",time:"9:30 AM – 1:00 PM",description:"8km of white sand beneath dramatic rust-red clay cliffs. Hotel's Adults-Only Sora beach club is right here — reserved sunbeds, towel service, cocktails.",tip:"Book sunbeds through hotel concierge the night before.",link:"https://maps.google.com/?q=Praia+de+Falesia+Albufeira",address:"",phone:"",bookingNote:"",mustOrder:""},
+  {id:8,date:"July 10",day:"Thu",label:"RESORT",title:"Falésia Beach + Catamaran + ⭐ Willie's",theme:"#2D7DD2",emoji:"🌅",sections:[
+    {id:"s8a",type:"activity",title:"Morning",icon:"🏖️",items:[
+      {id:"a20",name:"Praia de Falésia + Sora Club",time:"9:30 AM – 1:00 PM",description:"8km of white sand under rust-red clay cliffs. Hotel's Adults-Only Sora beach club — sunbeds, towel service, cocktails.",tip:"Book sunbeds via hotel concierge the night before.",link:"https://maps.google.com/?q=Praia+de+Falesia+Albufeira",address:"",phone:"",bookingNote:"",mustOrder:""},
     ]},
     {id:"s8b",type:"activity",title:"Afternoon — Optional",icon:"🐬",items:[
-      {id:"i35",name:"Sunset Catamaran + Dolphin Watching",time:"Departs ~5:00 PM from Vilamoura Marina",description:"2.5–3 hour catamaran cruise with near-guaranteed dolphin sightings in July. Sunset on the water, wine and snacks included. ~€50–65/person.",tip:"July boats fill weeks in advance.",link:"https://www.viator.com/Vilamoura/d22459-ttd",bookingNote:"📅 Book at least 1 week ahead",address:"",phone:"",mustOrder:""},
+      {id:"a21",name:"Sunset Catamaran + Dolphins",time:"~5:00 PM Vilamoura Marina",description:"2.5–3 hr cruise with near-guaranteed dolphin sightings in July. Sunset, wine, snacks. ~€50–65/person.",tip:"July fills weeks ahead.",link:"https://www.viator.com/Vilamoura/d22459-ttd",bookingNote:"📅 Book 1 week ahead",address:"",phone:"",mustOrder:""},
     ]},
-    {id:"s8c",type:"dinner",title:"Dinner — 🌟 ONE MICHELIN STAR",icon:"⭐",items:[
-      {id:"i36",name:"Willie's Restaurant",time:"7:00–10:30 PM · CLOSED WEDNESDAYS · Thursday = OPEN ✓",description:"25-year institution. 8-table intimate dining room in a classic villa. Chef Willie Wurger won the Algarve's first-ever Michelin star (1989). Lobster tail, veal rib-eye, white chocolate millefeuille.",mustOrder:"Lobster tail starter · Veal rib-eye (signature) · White chocolate millefeuille",tip:"Smart casual/elegant. Chef Willie personally greets tables.",address:"R. do Brasil 2, 8125-479 Vilamoura",phone:"+351 289 380 849",link:"https://willies-restaurante.com/",bookingNote:"🔴 BOOK NOW — very limited seating"},
+    {id:"s8c",type:"dinner",title:"Dinner 🌟 MICHELIN STAR",icon:"⭐",items:[
+      {id:"a22",name:"Willie's Restaurant",time:"7:00 PM · CLOSED WED · Thu ✓",description:"25-year institution. 8-table intimate dining in a classic villa. Chef Willie Wurger won the Algarve's first-ever Michelin star in 1989.",mustOrder:"Lobster tail · Veal rib-eye · White chocolate millefeuille",tip:"Smart casual/elegant. Chef Willie personally greets every table.",address:"R. do Brasil 2, Vilamoura",phone:"+351 289 380 849",link:"https://willies-restaurante.com/",bookingNote:"🔴 BOOK NOW — very limited seating"},
     ]},
   ]},
-  {id:9,date:"July 11",day:"Friday",label:"LISBON",title:"Drive North → Arrábida → Lisbon",theme:"#4A6741",emoji:"🏙️",sections:[
+  {id:9,date:"July 11",day:"Fri",label:"LISBON",title:"Drive North → Arrábida → Lisbon",theme:"#4A6741",emoji:"🏙️",sections:[
     {id:"s9a",type:"activity",title:"Morning — Optional Stop",icon:"🏖️",items:[
-      {id:"i37",name:"Serra da Arrábida (Optional)",time:"Depart Vilamoura by 9:00 AM · Arrábida 11 AM–1:30 PM",description:"Crystal clear turquoise water, limestone mountains descending to the sea. Praia de Portinho da Arrábida is the best cove.",tip:"July requires a timed entry permit — check autoridadeportuaria.pt or arrive before 8 AM.",link:"https://maps.google.com/?q=Praia+Portinho+Arrabida",address:"",phone:"",bookingNote:"",mustOrder:""},
+      {id:"a23",name:"Serra da Arrábida",time:"Depart 9:00 AM · Arrive 11 AM",description:"Crystal clear turquoise water, limestone mountains plunging to the sea. Praia de Portinho da Arrábida is the best cove.",tip:"July needs timed entry permit or arrive before 8 AM.",link:"https://maps.google.com/?q=Praia+Portinho+Arrabida",address:"",phone:"",bookingNote:"",mustOrder:""},
     ]},
     {id:"s9b",type:"logistics",title:"Lisbon Arrival",icon:"🏙️",items:[
-      {id:"i38",label:"Airbnb",value:"Rua Morais Soares 311, Lisbon (Mouraria area)"},
-      {id:"i39",label:"Airport Distance",value:"~15 min to LIS"},
-      {id:"i40",label:"Check-in",value:"Target 4:00–5:00 PM"},
-      {id:"i41",label:"Car",value:"Return rental car near airport — confirm with rental company"},
+      {id:"l15",label:"Airbnb",value:"Rua Morais Soares 311, Mouraria, Lisbon"},
+      {id:"l16",label:"Airport",value:"~15 min to LIS"},
+      {id:"l17",label:"Check-in",value:"Target 4:00–5:00 PM"},
+      {id:"l18",label:"Car",value:"Return rental near airport — confirm location"},
     ]},
     {id:"s9c",type:"dinner",title:"Dinner — LISBON INSTITUTION",icon:"🍽️",items:[
-      {id:"i42",name:"Cervejaria Ramiro",time:"Tue–Sun 12 PM–12:30 AM · CLOSED MONDAYS · Friday = OPEN ✓",description:"THE Lisbon seafood institution since 1956. Bourdain-approved, beer-hall casual but world-class shellfish. Finish with the famous prego steak sandwich.",mustOrder:"Carabineiro scarlet shrimp · Giant tiger prawns · Spider crab · Percebes · Prego to finish",tip:"Arrive by 7 PM for shorter wait.",address:"Av. Almirante Reis 1-H, 1150-007 Lisboa",phone:"+351 218 851 024",link:"https://www.cervejariaramiro.com",bookingNote:"📅 Book on TheFork or arrive by 7 PM"},
+      {id:"a24",name:"Cervejaria Ramiro",time:"Open Fri ✓ · CLOSED MON",description:"THE Lisbon seafood institution since 1956. Bourdain-approved. Beer-hall casual, world-class shellfish. Finish with the prego steak sandwich.",mustOrder:"Carabineiro shrimp · Tiger prawns · Spider crab · Percebes · Prego",tip:"Arrive by 7 PM for shorter wait.",address:"Av. Almirante Reis 1-H, Lisboa",phone:"+351 218 851 024",link:"https://www.cervejariaramiro.com",bookingNote:"📅 TheFork or walk-in by 7 PM"},
     ]},
   ]},
-  {id:10,date:"July 12",day:"Saturday",label:"HOME",title:"Depart Lisbon → Newark",theme:"#555555",emoji:"🏠",sections:[
-    {id:"s10a",type:"logistics",title:"Departure",icon:"✈️",items:[
-      {id:"i43",label:"Wake up",value:"5:30 AM"},
-      {id:"i44",label:"Leave Airbnb",value:"7:00 AM sharp"},
-      {id:"i45",label:"Drive to Airport",value:"~15 min to LIS"},
-      {id:"i46",label:"Flight",value:"LIS → EWR departing 9:55 AM"},
-      {id:"i47",label:"Tip",value:"Return rental car the night before if possible"},
+  {id:10,date:"July 12",day:"Sat",label:"HOME",title:"Depart Lisbon → Newark",theme:"#636366",emoji:"🏠",sections:[
+    {id:"s10a",type:"logistics",title:"Departure Day",icon:"✈️",items:[
+      {id:"l19",label:"Wake up",value:"5:30 AM"},
+      {id:"l20",label:"Leave",value:"7:00 AM sharp"},
+      {id:"l21",label:"Drive",value:"~15 min to LIS"},
+      {id:"l22",label:"Flight",value:"LIS → EWR · 9:55 AM"},
+      {id:"l23",label:"Tip",value:"Return rental car night before if possible"},
     ]},
   ]},
 ];
-
-const INITIAL_BOOKINGS = [
-  {id:"b1",priority:"critical",when:"TODAY",night:"July 9",name:"Ocean Restaurant ⭐⭐",action:"Book via vilavitaparc.com — 3-month summer wait",link:"https://vilavitaparc.com/en/restaurantsandbars/ocean-restaurant",done:false},
-  {id:"b2",priority:"critical",when:"TODAY",night:"July 10",name:"Willie's Restaurant ⭐",action:"Call +351 289 380 849 — very limited seating",link:"https://willies-restaurante.com/",done:false},
-  {id:"b3",priority:"critical",when:"THIS WEEK",night:"July 4",name:"Kayak Tour — Ponta da Piedade",action:"Book on Viator — sells out weeks ahead",link:"https://www.viator.com/tours/Lagos/Kayaking-Tour-from-Lagos/d23572-49301P1",done:false},
-  {id:"b4",priority:"critical",when:"THIS WEEK",night:"July 4",name:"Don Sebastião dinner",action:"Call +351 282 780 480",link:"http://www.restaurantedonsebastiao.com",done:false},
-  {id:"b5",priority:"critical",when:"THIS WEEK",night:"July 5",name:"Restaurante dos Artistas",action:"Book via artistasrestaurant.com",link:"https://www.artistasrestaurant.com/reservations",done:false},
-  {id:"b6",priority:"high",when:"2 WEEKS OUT",night:"July 7",name:"Casinha do Petisco",action:"Call ahead — CASH ONLY",link:"https://casinhadopetisco.pt/",done:false},
-  {id:"b7",priority:"high",when:"2 WEEKS OUT",night:"July 8",name:"Casa do Pescador",action:"Call or book online",link:"https://maps.google.com/?q=Casa+do+Pescador+Vilamoura",done:false},
-  {id:"b8",priority:"high",when:"2 WEEKS OUT",night:"July 9",name:"Benagil Cave Boat Tour",action:"Book on GetYourGuide",link:"https://www.getyourguide.com/benagil-l142720/",done:false},
-  {id:"b9",priority:"medium",when:"1 WEEK OUT",night:"July 10",name:"Sunset Catamaran",action:"Book at Vilamoura Marina",link:"https://www.viator.com/Vilamoura/d22459-ttd",done:false},
-  {id:"b10",priority:"medium",when:"48 HRS OUT",night:"July 6",name:"Quinta dos Vales tasting",action:"Call +351 282 431 036",link:"https://quintadosvales.pt/en/wine/",done:false},
-  {id:"b11",priority:"medium",when:"IN LISBON",night:"July 11",name:"Cervejaria Ramiro",action:"TheFork or walk-in by 7 PM",link:"https://www.cervejariaramiro.com",done:false},
+const BOOK0=[
+  {id:"b1",p:"critical",when:"TODAY",night:"July 9",name:"Ocean Restaurant ⭐⭐",action:"vilavitaparc.com — 3-month summer wait",link:"https://vilavitaparc.com/en/restaurantsandbars/ocean-restaurant",done:false},
+  {id:"b2",p:"critical",when:"TODAY",night:"July 10",name:"Willie's Restaurant ⭐",action:"Call +351 289 380 849",link:"https://willies-restaurante.com/",done:false},
+  {id:"b3",p:"critical",when:"THIS WEEK",night:"July 4",name:"Kayak Tour — Ponta da Piedade",action:"Viator — sells out weeks ahead",link:"https://www.viator.com/tours/Lagos/Kayaking-Tour-from-Lagos/d23572-49301P1",done:false},
+  {id:"b4",p:"critical",when:"THIS WEEK",night:"July 4",name:"Don Sebastião",action:"Call +351 282 780 480",link:"http://www.restaurantedonsebastiao.com",done:false},
+  {id:"b5",p:"critical",when:"THIS WEEK",night:"July 5",name:"Restaurante dos Artistas",action:"artistasrestaurant.com/reservations",link:"https://www.artistasrestaurant.com/reservations",done:false},
+  {id:"b6",p:"high",when:"2 WEEKS OUT",night:"July 7",name:"Casinha do Petisco",action:"Call ahead — CASH ONLY",link:"https://casinhadopetisco.pt/",done:false},
+  {id:"b7",p:"high",when:"2 WEEKS OUT",night:"July 8",name:"Casa do Pescador",action:"Call or book online",link:"https://maps.google.com/?q=Casa+do+Pescador+Vilamoura",done:false},
+  {id:"b8",p:"high",when:"2 WEEKS OUT",night:"July 9",name:"Benagil Cave Tour",action:"GetYourGuide",link:"https://www.getyourguide.com/benagil-l142720/",done:false},
+  {id:"b9",p:"medium",when:"1 WEEK OUT",night:"July 10",name:"Sunset Catamaran",action:"Vilamoura Marina",link:"https://www.viator.com/Vilamoura/d22459-ttd",done:false},
+  {id:"b10",p:"medium",when:"48 HRS OUT",night:"July 6",name:"Quinta dos Vales",action:"Call +351 282 431 036",link:"https://quintadosvales.pt/en/wine/",done:false},
+  {id:"b11",p:"medium",when:"IN LISBON",night:"July 11",name:"Cervejaria Ramiro",action:"TheFork or walk-in 7 PM",link:"https://www.cervejariaramiro.com",done:false},
 ];
+const PC={critical:"#FF453A",high:"#FF9F0A",medium:"#D4A843"};
+const PL={critical:"BOOK NOW",high:"BOOK SOON",medium:"PLAN AHEAD"};
 
-const PC = {critical:"#B5172A",high:"#E07B39",medium:"#C4974A"};
-const PL = {critical:"BOOK NOW",high:"BOOK SOON",medium:"PLAN AHEAD"};
-let _uid = 1000;
-const uid = () => `u${_uid++}`;
-
-// ── EDITABLE INLINE TEXT ─────────────────────────────
-function Editable({value, onChange, multiline=false, style={}, placeholder="", className=""}) {
-  const [editing,setEditing] = useState(false);
-  const [val,setVal] = useState(value);
-  const ref = useRef();
-  useEffect(()=>{ if(editing) ref.current?.focus(); },[editing]);
-  useEffect(()=>setVal(value),[value]);
-  const commit = ()=>{ setEditing(false); if(val!==value) onChange(val); };
-  const base = {background:"#0D0D0D",border:"1px solid #C4974A55",borderRadius:4,padding:"3px 7px",color:"#F0E8DC",resize:"vertical",outline:"none",width:"100%",...style};
-  if(editing) return multiline
-    ? <textarea ref={ref} value={val} onChange={e=>setVal(e.target.value)} onBlur={commit} style={{...base,minHeight:52,fontSize:13,lineHeight:1.6,fontFamily:"'EB Garamond',Georgia,serif"}}/>
-    : <input ref={ref} value={val} onChange={e=>setVal(e.target.value)} onBlur={commit} onKeyDown={e=>e.key==="Enter"&&commit()} style={{...base,fontSize:13,fontFamily:"'EB Garamond',Georgia,serif"}}/>;
-  return <span onClick={()=>setEditing(true)} title="Click to edit" style={{cursor:"text",borderBottom:"1px dashed #2a2a2a",paddingBottom:1,...style}}>{val||<span style={{color:"#333",fontStyle:"italic"}}>{placeholder||"click to edit"}</span>}</span>;
+/* ── PORTAL SHEET ─────────────────────────────── */
+function Sheet({open,onClose,title,children}){
+  const [mounted,setMounted]=useState(false);
+  useEffect(()=>{if(open)setMounted(true);},[open]);
+  if(!mounted)return null;
+  const sheetRoot=document.getElementById("sheet-root");
+  return ReactDOM.createPortal(
+    <div onClick={onClose}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",zIndex:9000,
+        display:"flex",alignItems:"flex-end",animation:"fadeIn .18s ease",
+        pointerEvents:"auto"}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{width:"100%",background:"#1c1c1e",borderRadius:"18px 18px 0 0",
+          maxHeight:"88vh",display:"flex",flexDirection:"column",
+          animation:"slideUp .3s cubic-bezier(.25,.8,.25,1)",
+          paddingBottom:"max(20px,env(safe-area-inset-bottom,20px))"}}>
+        <div style={{display:"flex",justifyContent:"center",padding:"10px 0 0"}}>
+          <div style={{width:36,height:4,background:"#48484a",borderRadius:3}}/>
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+          padding:"10px 20px 14px",borderBottom:"1px solid #2c2c2e",flexShrink:0}}>
+          <div style={{fontSize:18,fontWeight:800,color:"#fff"}}>{title}</div>
+          <button onClick={onClose}
+            style={{width:30,height:30,background:"#3a3a3c",borderRadius:"50%",
+              display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:14,color:"#aeaeb2",fontWeight:700}}>✕</button>
+        </div>
+        <div style={{overflowY:"auto",flex:1,padding:"18px 20px 8px",
+          WebkitOverflowScrolling:"touch"}}>
+          {children}
+        </div>
+      </div>
+    </div>,
+    sheetRoot
+  );
 }
 
-// ── ACTIVITY / DINNER CARD ───────────────────────────
-function ActivityCard({item, theme, ctx, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast}) {
-  const [open,setOpen] = useState(false);
-  const [mode,setMode] = useState("ai");
-  const [prompt,setPrompt] = useState("");
-  const [loading,setLoading] = useState(false);
-  const [flash,setFlash] = useState(false);
-  const [confirmDel,setConfirmDel] = useState(false);
+/* ── FORM INPUT ───────────────────────────────── */
+function FI({label,val,set,multi,ph,rows=3}){
+  const s={width:"100%",background:"var(--bg4)",border:"none",borderRadius:11,
+    padding:"13px 14px",color:"var(--t1)",fontSize:15,outline:"none",lineHeight:1.5,resize:"none"};
+  return(
+    <div style={{marginBottom:14}}>
+      {label&&<div style={{fontSize:11,color:"var(--t3)",textTransform:"uppercase",
+        letterSpacing:.9,marginBottom:6,fontWeight:800}}>{label}</div>}
+      {multi
+        ?<textarea value={val} onChange={e=>set(e.target.value)} placeholder={ph} rows={rows} style={s}/>
+        :<input value={val} onChange={e=>set(e.target.value)} placeholder={ph} style={s}/>}
+    </div>
+  );
+}
 
-  const set = (f,v)=>{ onUpdate({...item,[f]:v}); setFlash(true); setTimeout(()=>setFlash(false),700); };
-  const submit = async()=>{
-    if(!prompt.trim()) return;
-    setLoading(true);
-    const u = await aiEditItem(item, prompt, ctx);
-    setLoading(false);
-    if(u){onUpdate({...item,...u});setFlash(true);setTimeout(()=>setFlash(false),1200);}
-    setPrompt(""); setOpen(false);
+/* ── ACTIVITY CARD ────────────────────────────── */
+function ACard({item,theme,ctx,onUpdate,onDelete}){
+  const [sh,setSh]=useState(null);
+  const [d,setD]=useState({...item});
+  const [aiPr,setAiPr]=useState("");
+  const [aiLoad,setAiLoad]=useState(false);
+  useEffect(()=>setD({...item}),[item.id]);
+  const sf=(f,v)=>setD(p=>({...p,[f]:v}));
+  const save=()=>{onUpdate({...d});setSh(null);};
+  const doAI=async()=>{
+    if(!aiPr.trim()||aiLoad)return;
+    setAiLoad(true);
+    const u=await aiEditItem(item,aiPr,ctx);
+    setAiLoad(false);
+    if(u){onUpdate({...item,...u});}
+    setAiPr("");setSh(null);
   };
-
-  return (
-    <div style={{background:flash?`${theme}14`:"#0f0f0f",border:`1px solid ${flash?theme+"66":open?theme+"44":"#1c1c1c"}`,borderRadius:10,marginBottom:8,transition:"all .35s",overflow:"hidden"}}>
-      {/* Top bar */}
-      <div style={{display:"flex",alignItems:"center",gap:6,padding:"12px 14px 10px",borderBottom:open?"1px solid #1a1a1a":"none"}}>
-        {/* Reorder */}
-        <div style={{display:"flex",flexDirection:"column",gap:1,flexShrink:0}}>
-          <button onClick={onMoveUp} disabled={isFirst} style={{background:"none",border:"none",cursor:isFirst?"not-allowed":"pointer",color:isFirst?"#222":"#444",fontSize:10,padding:"1px 3px",lineHeight:1}}>▲</button>
-          <button onClick={onMoveDown} disabled={isLast} style={{background:"none",border:"none",cursor:isLast?"not-allowed":"pointer",color:isLast?"#222":"#444",fontSize:10,padding:"1px 3px",lineHeight:1}}>▼</button>
-        </div>
+  return(<>
+    <div onClick={()=>{setD({...item});setSh("v");}}
+      style={{background:"var(--bg3)",borderRadius:16,padding:"15px 16px",marginBottom:10,cursor:"pointer"}}>
+      <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:14,color:"#F0E8DC",marginBottom:2}}>
-            <Editable value={item.name||""} onChange={v=>set("name",v)} style={{fontSize:14,color:"#F0E8DC"}}/>
-            {item.link&&<a href={item.link} target="_blank" rel="noreferrer" style={{marginLeft:5,color:theme,fontSize:11}}>↗</a>}
-          </div>
-          {item.time!==undefined&&<div style={{fontSize:11,color:theme,letterSpacing:.3}}>⏱ <Editable value={item.time||""} onChange={v=>set("time",v)} style={{fontSize:11,color:theme}} placeholder="add time…"/></div>}
+          <div style={{fontSize:16,fontWeight:700,color:"var(--t1)",marginBottom:3,overflow:"hidden",
+            textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name||"Unnamed"}</div>
+          {item.time&&<div style={{fontSize:13,fontWeight:700,color:theme,marginBottom:5}}>⏱ {item.time}</div>}
+          {item.description&&<div style={{fontSize:14,color:"var(--t2)",lineHeight:1.45,
+            display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>
+            {item.description}</div>}
+          {item.bookingNote&&<div style={{marginTop:8,background:"rgba(255,69,58,.12)",borderRadius:8,
+            padding:"6px 10px",fontSize:12,color:"#FF6961",fontWeight:700}}>{item.bookingNote}</div>}
         </div>
-        <div style={{display:"flex",gap:5,flexShrink:0,alignItems:"center"}}>
-          <button onClick={()=>{setOpen(o=>o&&mode==="manual"?false:true);setMode("manual");}} title="Edit fields" style={{background:open&&mode==="manual"?"#222":"none",border:`1px solid ${open&&mode==="manual"?"#555":"#222"}`,borderRadius:5,padding:"3px 8px",cursor:"pointer",fontSize:11,color:open&&mode==="manual"?"#ccc":"#444"}}>✎</button>
-          <button onClick={()=>{setOpen(o=>o&&mode==="ai"?false:true);setMode("ai");}} style={{background:open&&mode==="ai"?theme:"none",border:`1px solid ${open&&mode==="ai"?theme:"#222"}`,borderRadius:5,padding:"3px 8px",cursor:"pointer",fontSize:11,color:open&&mode==="ai"?"#000":"#666"}}>✦ AI</button>
-          {confirmDel
-            ? <><button onClick={onDelete} style={{background:"#B5172A",border:"none",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontSize:11,color:"#fff"}}>Delete</button><button onClick={()=>setConfirmDel(false)} style={{background:"none",border:"1px solid #333",borderRadius:5,padding:"3px 6px",cursor:"pointer",fontSize:11,color:"#555"}}>✕</button></>
-            : <button onClick={()=>setConfirmDel(true)} title="Remove" style={{background:"none",border:"1px solid #1a1a1a",borderRadius:5,padding:"3px 7px",cursor:"pointer",fontSize:11,color:"#333"}}>−</button>
-          }
-        </div>
+        <div style={{color:"var(--t3)",fontSize:20,flexShrink:0,fontWeight:300}}>›</div>
       </div>
+    </div>
 
-      {/* Body */}
-      {!open&&<div style={{padding:"0 14px 12px"}}>
-        {item.description&&<p style={{margin:"8px 0 6px",fontSize:13,color:"#A8A09A",lineHeight:1.7}}>
-          <Editable value={item.description} onChange={v=>set("description",v)} multiline style={{fontSize:13,color:"#A8A09A"}}/>
-        </p>}
-        {item.mustOrder&&<div style={{background:`${theme}12`,border:`1px solid ${theme}25`,borderRadius:6,padding:"6px 10px",marginTop:6,fontSize:12,color:"#C8BFB4"}}>
-          <span style={{fontSize:10,color:theme,letterSpacing:1.5,textTransform:"uppercase",marginRight:8}}>Must Order</span>
-          <Editable value={item.mustOrder} onChange={v=>set("mustOrder",v)} style={{fontSize:12,color:"#C8BFB4"}}/>
-        </div>}
-        {item.tip&&<div style={{background:"#0a0a0a",borderRadius:6,padding:"6px 10px",marginTop:6,fontSize:12,color:"#807870",lineHeight:1.6}}>
-          <span style={{fontSize:9,color:"#444",letterSpacing:1.5,textTransform:"uppercase",marginRight:6}}>💡</span>
-          <Editable value={item.tip} onChange={v=>set("tip",v)} multiline style={{fontSize:12,color:"#807870"}} placeholder="add tip…"/>
-        </div>}
-        <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:11,color:"#444",marginTop:item.description||item.tip?6:0}}>
-          {item.address!==undefined&&<span>📍 <Editable value={item.address||""} onChange={v=>set("address",v)} style={{fontSize:11,color:"#444"}} placeholder="address"/></span>}
-          {item.phone!==undefined&&<span>📞 <Editable value={item.phone||""} onChange={v=>set("phone",v)} style={{fontSize:11,color:"#444"}} placeholder="phone"/></span>}
-        </div>
-        {item.bookingNote&&<div style={{marginTop:8,background:"#140808",border:"1px solid #B5172A33",borderRadius:6,padding:"6px 10px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
-          <div style={{fontSize:11,color:"#C06060",flex:1}}><Editable value={item.bookingNote} onChange={v=>set("bookingNote",v)} style={{fontSize:11,color:"#C06060"}}/></div>
-          {item.link&&<a href={item.link} target="_blank" rel="noreferrer" style={{fontSize:11,background:"#B5172A",color:"#fff",padding:"3px 9px",borderRadius:4,flexShrink:0}}>BOOK →</a>}
-        </div>}
+    <Sheet open={sh==="v"} onClose={()=>setSh(null)} title={item.name||"Event"}>
+      {item.time&&<div style={{fontSize:14,fontWeight:700,color:theme,marginBottom:12}}>⏱ {item.time}</div>}
+      {item.description&&<p style={{fontSize:15,color:"var(--t2)",lineHeight:1.65,marginBottom:16}}>{item.description}</p>}
+      {item.mustOrder&&<div style={{background:`${theme}1a`,borderRadius:13,padding:"13px 15px",marginBottom:14}}>
+        <div style={{fontSize:11,color:theme,textTransform:"uppercase",letterSpacing:1,fontWeight:800,marginBottom:5}}>Must Order</div>
+        <div style={{fontSize:14,color:"var(--t1)",lineHeight:1.5}}>{item.mustOrder}</div>
       </div>}
-
-      {/* Manual edit panel */}
-      {open&&mode==="manual"&&<div style={{padding:"12px 14px",background:"#080808"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-          {[["name","Name"],["time","Time"],["link","Link"],["phone","Phone"],["address","Address"],["bookingNote","Booking Note"]].map(([f,l])=>(
-            <div key={f}>
-              <div style={{fontSize:10,color:"#444",letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{l}</div>
-              <input value={item[f]||""} onChange={e=>set(f,e.target.value)} style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:5,padding:"5px 8px",color:"#D4C8B8",fontSize:12,fontFamily:"'EB Garamond',Georgia,serif",outline:"none"}}/>
-            </div>
-          ))}
-        </div>
-        {[["description","Description",3],["tip","Tip",2],["mustOrder","Must Order",1]].map(([f,l,r])=>(
-          <div key={f} style={{marginBottom:8}}>
-            <div style={{fontSize:10,color:"#444",letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{l}</div>
-            <textarea value={item[f]||""} onChange={e=>set(f,e.target.value)} rows={r} style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:5,padding:"5px 8px",color:"#D4C8B8",fontSize:12,fontFamily:"'EB Garamond',Georgia,serif",outline:"none",resize:"vertical"}}/>
-          </div>
-        ))}
+      {item.tip&&<div style={{background:"var(--bg4)",borderRadius:13,padding:"13px 15px",marginBottom:14}}>
+        <div style={{fontSize:11,color:"var(--t3)",textTransform:"uppercase",letterSpacing:1,fontWeight:700,marginBottom:5}}>💡 Insider Tip</div>
+        <div style={{fontSize:14,color:"var(--t2)",lineHeight:1.55}}>{item.tip}</div>
       </div>}
+      {item.bookingNote&&<div style={{background:"rgba(255,69,58,.1)",borderRadius:13,padding:"13px 15px",
+        marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+        <div style={{fontSize:13,color:"#FF6961",flex:1,fontWeight:600}}>{item.bookingNote}</div>
+        {item.link&&<a href={item.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}
+          style={{background:"var(--red)",color:"#fff",borderRadius:9,padding:"9px 15px",fontSize:13,fontWeight:800,flexShrink:0}}>Book →</a>}
+      </div>}
+      {(item.address||item.phone)&&<div style={{background:"var(--bg4)",borderRadius:13,padding:"13px 15px",marginBottom:14}}>
+        {item.address&&<div style={{fontSize:13,color:"var(--t2)",marginBottom:item.phone?5:0}}>📍 {item.address}</div>}
+        {item.phone&&<div style={{fontSize:13,color:"var(--t2)"}}>📞 {item.phone}</div>}
+      </div>}
+      {item.link&&!item.bookingNote&&<a href={item.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}
+        style={{display:"block",background:"var(--bg4)",borderRadius:13,padding:"15px",
+          fontSize:15,color:"var(--blue)",textAlign:"center",marginBottom:14,fontWeight:700}}>Open Maps / Website ↗</a>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+        <button onClick={()=>setSh("e")}
+          style={{background:"var(--bg4)",borderRadius:13,padding:"15px",fontSize:15,fontWeight:800,color:"var(--t1)"}}>✎ Edit</button>
+        <button onClick={()=>setSh("a")}
+          style={{background:`${theme}22`,borderRadius:13,padding:"15px",fontSize:15,fontWeight:800,color:theme}}>✦ AI Edit</button>
+      </div>
+      <button onClick={()=>setSh("del")}
+        style={{width:"100%",background:"rgba(255,69,58,.12)",borderRadius:13,padding:"15px",
+          fontSize:15,fontWeight:800,color:"var(--red)"}}>Delete Event</button>
+    </Sheet>
 
-      {/* AI panel */}
-      {open&&mode==="ai"&&<div style={{padding:"12px 14px",background:"#080808"}}>
-        <div style={{fontSize:10,color:theme,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>✦ Ask AI to change this</div>
-        <div style={{fontSize:12,color:"#444",marginBottom:8}}>e.g. "swap for a quieter beach" · "Michelin alternative" · "rainy day version"</div>
+    <Sheet open={sh==="e"} onClose={save} title="Edit Event">
+      <FI label="Name" val={d.name||""} set={v=>sf("name",v)} ph="Event name"/>
+      <FI label="Time" val={d.time||""} set={v=>sf("time",v)} ph="e.g. 9:00 AM – 1:00 PM"/>
+      <FI label="Description" val={d.description||""} set={v=>sf("description",v)} multi ph="What is this?" rows={3}/>
+      <FI label="Tip" val={d.tip||""} set={v=>sf("tip",v)} multi ph="Insider tip…" rows={2}/>
+      <FI label="Must Order" val={d.mustOrder||""} set={v=>sf("mustOrder",v)} ph="Dishes to order"/>
+      <FI label="Address" val={d.address||""} set={v=>sf("address",v)} ph="Full address"/>
+      <FI label="Phone" val={d.phone||""} set={v=>sf("phone",v)} ph="+351…"/>
+      <FI label="Link" val={d.link||""} set={v=>sf("link",v)} ph="https://…"/>
+      <FI label="Booking Note" val={d.bookingNote||""} set={v=>sf("bookingNote",v)} ph="e.g. 🔴 BOOK NOW"/>
+      <button onClick={save}
+        style={{width:"100%",background:"var(--gold)",borderRadius:13,padding:"16px",
+          fontSize:16,fontWeight:800,color:"#000",marginTop:4}}>Save Changes</button>
+    </Sheet>
+
+    <Sheet open={sh==="a"} onClose={()=>setSh(null)} title="✦ AI Edit">
+      <div style={{background:"var(--bg4)",borderRadius:13,padding:"13px 15px",marginBottom:16}}>
+        <div style={{fontSize:14,fontWeight:700,color:"var(--t1)",marginBottom:2}}>{item.name}</div>
+        {item.time&&<div style={{fontSize:12,color:theme,fontWeight:600}}>{item.time}</div>}
+      </div>
+      <div style={{fontSize:13,color:"var(--t3)",marginBottom:14,lineHeight:1.55}}>
+        e.g. "swap for a quieter beach" · "find a Michelin alternative" · "rainy day version"
+      </div>
+      <FI label="What to change?" val={aiPr} set={setAiPr} multi ph="Describe what you'd like…" rows={3}/>
+      <button onClick={doAI} disabled={aiLoad||!aiPr.trim()}
+        style={{width:"100%",background:aiLoad||!aiPr.trim()?"var(--bg4)":"var(--gold)",
+          borderRadius:13,padding:"16px",fontSize:16,fontWeight:800,
+          color:aiLoad||!aiPr.trim()?"var(--t3)":"#000"}}>
+        {aiLoad?<span className="spin"/>:"Update with AI ✦"}
+      </button>
+    </Sheet>
+
+    <Sheet open={sh==="del"} onClose={()=>setSh(null)} title="Delete Event">
+      <p style={{fontSize:15,color:"var(--t2)",lineHeight:1.5,marginBottom:24}}>
+        Delete <b style={{color:"var(--t1)"}}>{item.name}</b>? This cannot be undone.
+      </p>
+      <button onClick={()=>{onDelete();setSh(null);}}
+        style={{width:"100%",background:"var(--red)",borderRadius:13,padding:"15px",
+          fontSize:16,fontWeight:800,color:"#fff",marginBottom:10}}>Delete</button>
+      <button onClick={()=>setSh("v")}
+        style={{width:"100%",background:"var(--bg4)",borderRadius:13,padding:"15px",
+          fontSize:16,fontWeight:700,color:"var(--t1)"}}>Cancel</button>
+    </Sheet>
+  </>);
+}
+
+/* ── LOGISTICS SECTION ────────────────────────── */
+function LogSec({sec,onUpdate,onDelete}){
+  const [sh,setSh]=useState(null);
+  const [nl,setNl]=useState("");const [nv,setNv]=useState("");
+  const upd=(i,v)=>onUpdate({...sec,items:sec.items.map((x,j)=>j===i?v:x)});
+  const del=(i)=>onUpdate({...sec,items:sec.items.filter((_,j)=>j!==i)});
+  const add=()=>{
+    if(!nl.trim()&&!nv.trim())return;
+    onUpdate({...sec,items:[...sec.items,{id:uid(),label:nl,value:nv}]});
+    setNl("");setNv("");setSh(null);
+  };
+  return(<>
+    <div style={{marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:18}}>{sec.icon}</span>
+          <span style={{fontSize:14,fontWeight:800,color:"var(--t2)",textTransform:"uppercase",letterSpacing:.5}}>{sec.title}</span>
+        </div>
         <div style={{display:"flex",gap:8}}>
-          <input value={prompt} onChange={e=>setPrompt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="What would you like to change?" style={{flex:1,background:"#111",border:`1px solid ${theme}33`,borderRadius:6,padding:"7px 11px",color:"#E8DDD0",fontSize:13,fontFamily:"'EB Garamond',Georgia,serif",outline:"none"}}/>
-          <button onClick={submit} disabled={loading||!prompt.trim()} style={{background:loading?"#222":theme,border:"none",borderRadius:6,padding:"7px 16px",cursor:loading?"not-allowed":"pointer",color:loading?"#555":"#000",fontSize:13,flexShrink:0}}>{loading?<span className="spin"/>:"Update"}</button>
-        </div>
-      </div>}
-    </div>
-  );
-}
-
-// ── LOGISTICS SECTION ────────────────────────────────
-function LogisticsSection({section, theme, dayId, onUpdateSection, onDeleteSection}) {
-  const updateItem = (ii,val) => onUpdateSection({...section,items:section.items.map((x,i)=>i===ii?val:x)});
-  const deleteItem = (ii) => onUpdateSection({...section,items:section.items.filter((_,i)=>i!==ii)});
-  const addItem = () => onUpdateSection({...section,items:[...section.items,{id:uid(),label:"New",value:""}]});
-
-  return (
-    <div style={{background:"#0f0f0f",border:"1px solid #1c1c1c",borderRadius:10,overflow:"hidden",marginBottom:8}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderBottom:"1px solid #1a1a1a"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span>{section.icon}</span>
-          <span style={{fontSize:11,letterSpacing:2,color:"#555",textTransform:"uppercase"}}><Editable value={section.title} onChange={v=>onUpdateSection({...section,title:v})} style={{fontSize:11,color:"#555"}}/></span>
-        </div>
-        <div style={{display:"flex",gap:6}}>
-          <button onClick={addItem} style={{background:"none",border:"1px solid #222",borderRadius:5,padding:"3px 9px",cursor:"pointer",fontSize:11,color:"#555"}}>+ Row</button>
-          <button onClick={onDeleteSection} style={{background:"none",border:"1px solid #1a1a1a",borderRadius:5,padding:"3px 7px",cursor:"pointer",fontSize:11,color:"#2a2a2a"}} title="Remove section">−</button>
+          <button onClick={()=>setSh("add")}
+            style={{background:"var(--bg4)",borderRadius:9,padding:"7px 14px",fontSize:13,fontWeight:800,color:"var(--t2)"}}>+ Add</button>
+          <button onClick={()=>setSh("del")}
+            style={{background:"rgba(255,69,58,.12)",borderRadius:9,padding:"7px 11px",fontSize:13,fontWeight:800,color:"var(--red)"}}>−</button>
         </div>
       </div>
-      <div style={{padding:"10px 14px"}}>
-        {section.items.map((item,ii)=>(
-          <div key={item.id} style={{display:"flex",gap:10,marginBottom:ii<section.items.length-1?6:0,paddingBottom:ii<section.items.length-1?6:0,borderBottom:ii<section.items.length-1?"1px solid #141414":"none",alignItems:"flex-start"}}>
-            <div style={{fontSize:11,color:"#555",minWidth:80,flexShrink:0,paddingTop:3}}>
-              <Editable value={item.label||""} onChange={v=>updateItem(ii,{...item,label:v})} style={{fontSize:11,color:"#555"}}/>
+      <div style={{background:"var(--bg3)",borderRadius:16,overflow:"hidden"}}>
+        {sec.items.length===0&&<div style={{padding:"18px 16px",fontSize:14,color:"var(--t3)",textAlign:"center"}}>No rows yet — tap + Add</div>}
+        {sec.items.map((item,i)=>(
+          <div key={item.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"13px 16px",
+            borderBottom:i<sec.items.length-1?"1px solid var(--sep)":"none"}}>
+            <div style={{minWidth:76,flexShrink:0}}>
+              <input value={item.label} onChange={e=>upd(i,{...item,label:e.target.value})}
+                style={{background:"none",border:"none",outline:"none",color:"var(--t3)",
+                  fontSize:12,fontWeight:800,width:"100%",textTransform:"uppercase",letterSpacing:.4}}/>
             </div>
-            <div style={{fontSize:13,color:"#C8C0B8",flex:1,lineHeight:1.55}}>
-              <Editable value={item.value||""} onChange={v=>updateItem(ii,{...item,value:v})} multiline style={{fontSize:13,color:"#C8C0B8"}}/>
+            <div style={{flex:1}}>
+              <input value={item.value} onChange={e=>upd(i,{...item,value:e.target.value})}
+                style={{background:"none",border:"none",outline:"none",color:"var(--t1)",fontSize:14,width:"100%"}}/>
             </div>
-            <button onClick={()=>deleteItem(ii)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"#222",padding:"2px 4px",flexShrink:0}}>×</button>
+            <button onClick={()=>del(i)}
+              style={{color:"var(--t4)",fontSize:22,lineHeight:"1",padding:"0 2px",flexShrink:0,fontWeight:300}}>×</button>
           </div>
         ))}
-        {section.items.length===0&&<div style={{fontSize:12,color:"#333",fontStyle:"italic"}}>No rows — click + Row to add</div>}
       </div>
     </div>
-  );
+    <Sheet open={sh==="add"} onClose={()=>setSh(null)} title={`Add Row to ${sec.title}`}>
+      <FI label="Label" val={nl} set={setNl} ph="e.g. Hotel, Tip, Flight"/>
+      <FI label="Value" val={nv} set={setNv} multi ph="Details…" rows={2}/>
+      <button onClick={add}
+        style={{width:"100%",background:"var(--gold)",borderRadius:13,padding:"16px",
+          fontSize:16,fontWeight:800,color:"#000",marginTop:4}}>Add Row</button>
+    </Sheet>
+    <Sheet open={sh==="del"} onClose={()=>setSh(null)} title="Delete Section">
+      <p style={{fontSize:15,color:"var(--t2)",lineHeight:1.5,marginBottom:24}}>
+        Delete <b style={{color:"var(--t1)"}}>{sec.title}</b> and all its rows?
+      </p>
+      <button onClick={()=>{onDelete();setSh(null);}}
+        style={{width:"100%",background:"var(--red)",borderRadius:13,padding:"15px",
+          fontSize:16,fontWeight:800,color:"#fff",marginBottom:10}}>Delete</button>
+      <button onClick={()=>setSh(null)}
+        style={{width:"100%",background:"var(--bg4)",borderRadius:13,padding:"15px",
+          fontSize:16,fontWeight:700,color:"var(--t1)"}}>Cancel</button>
+    </Sheet>
+  </>);
 }
 
-// ── ACTIVITY SECTION ─────────────────────────────────
-function ActivitySection({section, theme, dayCtx, onUpdateSection, onDeleteSection}) {
-  const [aiLoading,setAiLoading] = useState(false);
-  const [showAddForm,setShowAddForm] = useState(false);
-  const [newItem,setNewItem] = useState({name:"",time:"",description:"",tip:"",address:"",phone:"",link:"",bookingNote:"",mustOrder:""});
-
-  const updateItem = (ii,val) => onUpdateSection({...section,items:section.items.map((x,i)=>i===ii?val:x)});
-  const deleteItem = (ii) => onUpdateSection({...section,items:section.items.filter((_,i)=>i!==ii)});
-  const moveItem = (ii,dir) => {
-    const arr=[...section.items]; const ni=ii+dir;
-    if(ni<0||ni>=arr.length) return;
-    [arr[ii],arr[ni]]=[arr[ni],arr[ii]];
-    onUpdateSection({...section,items:arr});
+/* ── ACTIVITY SECTION ─────────────────────────── */
+function ActSec({sec,theme,dayCtx,onUpdate,onDelete}){
+  const [sh,setSh]=useState(null);
+  const [aiLoad,setAiLoad]=useState(false);
+  const blank={name:"",time:"",description:"",tip:"",address:"",phone:"",link:"",bookingNote:"",mustOrder:""};
+  const [draft,setDraft]=useState({...blank});
+  const sf=(f,v)=>setDraft(p=>({...p,[f]:v}));
+  const upd=(i,v)=>onUpdate({...sec,items:sec.items.map((x,j)=>j===i?v:x)});
+  const del=(i)=>onUpdate({...sec,items:sec.items.filter((_,j)=>j!==i)});
+  const add=()=>{
+    if(!draft.name.trim())return;
+    onUpdate({...sec,items:[...sec.items,{...draft,id:uid()}]});
+    setDraft({...blank});setSh(null);
   };
-
-  const addManual = () => {
-    if(!newItem.name.trim()) return;
-    onUpdateSection({...section,items:[...section.items,{...newItem,id:uid()}]});
-    setNewItem({name:"",time:"",description:"",tip:"",address:"",phone:"",link:"",bookingNote:"",mustOrder:""});
-    setShowAddForm(false);
+  const addAI=async()=>{
+    setAiLoad(true);
+    const s=await aiSuggest(dayCtx,sec.title,sec.type,sec.items);
+    setAiLoad(false);
+    if(s)onUpdate({...sec,items:[...sec.items,{...blank,...s,id:uid()}]});
   };
-
-  const addWithAI = async () => {
-    setAiLoading(true);
-    const s = await aiSuggestItem(dayCtx, section.title, section.type, section.items);
-    setAiLoading(false);
-    if(s) onUpdateSection({...section,items:[...section.items,{...s,id:uid(),description:s.description||"",tip:s.tip||"",address:s.address||"",phone:s.phone||"",link:s.link||"",bookingNote:s.bookingNote||"",mustOrder:s.mustOrder||""}]});
-  };
-
-  return (
-    <div style={{marginBottom:8}}>
-      {/* Section header */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,paddingBottom:6,borderBottom:"1px solid #141414"}}>
+  return(<>
+    <div style={{marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:14}}>{section.icon}</span>
-          <span style={{fontSize:10,letterSpacing:2.5,color:"#555",textTransform:"uppercase"}}>
-            <Editable value={section.title} onChange={v=>onUpdateSection({...section,title:v})} style={{fontSize:10,color:"#555"}}/>
-          </span>
+          <span style={{fontSize:18}}>{sec.icon}</span>
+          <span style={{fontSize:14,fontWeight:800,color:"var(--t2)",textTransform:"uppercase",letterSpacing:.5}}>{sec.title}</span>
         </div>
-        <div style={{display:"flex",gap:5}}>
-          <button onClick={addWithAI} disabled={aiLoading} style={{background:"none",border:"1px solid #C4974A33",borderRadius:5,padding:"3px 9px",cursor:aiLoading?"not-allowed":"pointer",fontSize:11,color:"#C4974A88"}}>{aiLoading?<span className="spin"/>:"✦ AI Add"}</button>
-          <button onClick={()=>setShowAddForm(s=>!s)} style={{background:showAddForm?"#1a1a1a":"none",border:"1px solid #222",borderRadius:5,padding:"3px 9px",cursor:"pointer",fontSize:11,color:"#555"}}>+ Add</button>
-          <button onClick={onDeleteSection} style={{background:"none",border:"1px solid #1a1a1a",borderRadius:5,padding:"3px 7px",cursor:"pointer",fontSize:11,color:"#2a2a2a"}} title="Remove section">−</button>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={addAI} disabled={aiLoad}
+            style={{background:"var(--gold-dim)",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:800,color:"var(--gold)"}}>
+            {aiLoad?<span className="spin"/>:"✦ AI"}
+          </button>
+          <button onClick={()=>{setDraft({...blank});setSh("add");}}
+            style={{background:"var(--bg4)",borderRadius:9,padding:"7px 14px",fontSize:13,fontWeight:800,color:"var(--t2)"}}>+ Add</button>
+          <button onClick={()=>setSh("del")}
+            style={{background:"rgba(255,69,58,.12)",borderRadius:9,padding:"7px 11px",fontSize:13,fontWeight:800,color:"var(--red)"}}>−</button>
         </div>
       </div>
-
-      {/* Items */}
-      {section.items.map((item,ii)=>(
-        <ActivityCard key={item.id} item={item} theme={theme} ctx={dayCtx+` — ${section.title}`}
-          onUpdate={val=>updateItem(ii,val)} onDelete={()=>deleteItem(ii)}
-          onMoveUp={()=>moveItem(ii,-1)} onMoveDown={()=>moveItem(ii,1)}
-          isFirst={ii===0} isLast={ii===section.items.length-1}/>
-      ))}
-      {section.items.length===0&&!showAddForm&&<div style={{fontSize:12,color:"#333",fontStyle:"italic",padding:"8px 0"}}>No events — click + Add or ✦ AI Add</div>}
-
-      {/* Add form */}
-      {showAddForm&&<div style={{background:"#0a0a0a",border:"1px solid #222",borderRadius:10,padding:"14px",marginTop:6}} className="fade">
-        <div style={{fontSize:10,color:"#555",letterSpacing:2,textTransform:"uppercase",marginBottom:10}}>New Event</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-          {[["name","Name *"],["time","Time"],["link","Link"],["phone","Phone"],["address","Address"],["bookingNote","Booking Note"]].map(([f,l])=>(
-            <div key={f}>
-              <div style={{fontSize:10,color:"#444",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>{l}</div>
-              <input value={newItem[f]} onChange={e=>setNewItem(p=>({...p,[f]:e.target.value}))} style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:5,padding:"5px 8px",color:"#D4C8B8",fontSize:12,fontFamily:"'EB Garamond',Georgia,serif",outline:"none"}}/>
-            </div>
-          ))}
-        </div>
-        {[["description","Description",3],["tip","Tip",2],["mustOrder","Must Order",1]].map(([f,l,r])=>(
-          <div key={f} style={{marginBottom:8}}>
-            <div style={{fontSize:10,color:"#444",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>{l}</div>
-            <textarea value={newItem[f]} onChange={e=>setNewItem(p=>({...p,[f]:e.target.value}))} rows={r} style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:5,padding:"5px 8px",color:"#D4C8B8",fontSize:12,fontFamily:"'EB Garamond',Georgia,serif",outline:"none",resize:"vertical"}}/>
+      {sec.items.length===0
+        ?<div style={{background:"var(--bg3)",borderRadius:16,padding:"22px",textAlign:"center"}}>
+          <div style={{fontSize:14,color:"var(--t3)",marginBottom:14}}>No events yet</div>
+          <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+            <button onClick={()=>{setDraft({...blank});setSh("add");}}
+              style={{background:"var(--bg4)",borderRadius:11,padding:"11px 18px",fontSize:14,fontWeight:800,color:"var(--t2)"}}>+ Add</button>
+            <button onClick={addAI} disabled={aiLoad}
+              style={{background:"var(--gold-dim)",borderRadius:11,padding:"11px 18px",fontSize:14,fontWeight:800,color:"var(--gold)"}}>
+              {aiLoad?<span className="spin"/>:"✦ AI Suggest"}
+            </button>
           </div>
-        ))}
-        <div style={{display:"flex",gap:8,marginTop:4}}>
-          <button onClick={addManual} disabled={!newItem.name.trim()} style={{background:newItem.name.trim()?"#C4974A":"#222",border:"none",borderRadius:6,padding:"7px 18px",cursor:newItem.name.trim()?"pointer":"not-allowed",color:newItem.name.trim()?"#000":"#555",fontSize:13}}>Add Event</button>
-          <button onClick={()=>setShowAddForm(false)} style={{background:"none",border:"1px solid #222",borderRadius:6,padding:"7px 14px",cursor:"pointer",color:"#555",fontSize:13}}>Cancel</button>
         </div>
-      </div>}
+        :sec.items.map((item,i)=>(
+          <ACard key={item.id} item={item} theme={theme}
+            ctx={`${dayCtx} — ${sec.title}`}
+            onUpdate={v=>upd(i,v)} onDelete={()=>del(i)}/>
+        ))
+      }
     </div>
-  );
+    <Sheet open={sh==="add"} onClose={()=>setSh(null)} title={`Add to ${sec.title}`}>
+      <FI label="Name *" val={draft.name} set={v=>sf("name",v)} ph="Event or restaurant name"/>
+      <FI label="Time" val={draft.time} set={v=>sf("time",v)} ph="e.g. 9:00 AM – 1:00 PM"/>
+      <FI label="Description" val={draft.description} set={v=>sf("description",v)} multi ph="What is this?" rows={3}/>
+      <FI label="Tip" val={draft.tip} set={v=>sf("tip",v)} multi ph="Insider tip…" rows={2}/>
+      <FI label="Must Order" val={draft.mustOrder} set={v=>sf("mustOrder",v)} ph="Dishes to order"/>
+      <FI label="Address" val={draft.address} set={v=>sf("address",v)} ph="Full address"/>
+      <FI label="Phone" val={draft.phone} set={v=>sf("phone",v)} ph="+351…"/>
+      <FI label="Link" val={draft.link} set={v=>sf("link",v)} ph="https://…"/>
+      <FI label="Booking Note" val={draft.bookingNote} set={v=>sf("bookingNote",v)} ph="e.g. 🔴 BOOK NOW"/>
+      <button onClick={add} disabled={!draft.name.trim()}
+        style={{width:"100%",background:draft.name.trim()?"var(--gold)":"var(--bg4)",borderRadius:13,
+          padding:"16px",fontSize:16,fontWeight:800,color:draft.name.trim()?"#000":"var(--t3)",marginTop:4}}>Add Event</button>
+    </Sheet>
+    <Sheet open={sh==="del"} onClose={()=>setSh(null)} title="Delete Section">
+      <p style={{fontSize:15,color:"var(--t2)",lineHeight:1.5,marginBottom:24}}>
+        Delete <b style={{color:"var(--t1)"}}>{sec.title}</b> and all its events?
+      </p>
+      <button onClick={()=>{onDelete();setSh(null);}}
+        style={{width:"100%",background:"var(--red)",borderRadius:13,padding:"15px",
+          fontSize:16,fontWeight:800,color:"#fff",marginBottom:10}}>Delete</button>
+      <button onClick={()=>setSh(null)}
+        style={{width:"100%",background:"var(--bg4)",borderRadius:13,padding:"15px",
+          fontSize:16,fontWeight:700,color:"var(--t1)"}}>Cancel</button>
+    </Sheet>
+  </>);
 }
 
-// ── MAIN APP ─────────────────────────────────────────
-function App() {
-  const [days,setDays] = useState(()=>{ try{ const s=localStorage.getItem(LS_KEY); if(s){ const p=JSON.parse(s); return p.days||INITIAL_DAYS; } }catch{} return INITIAL_DAYS; });
-  const [bookings,setBookings] = useState(()=>{ try{ const s=localStorage.getItem(LS_KEY); if(s){ const p=JSON.parse(s); return p.bookings||INITIAL_BOOKINGS; } }catch{} return INITIAL_BOOKINGS; });
-  const [photos,setPhotos] = useState([]);
-  const [tab,setTab] = useState("itinerary");
-  const [dayIdx,setDayIdx] = useState(0);
-  const [selPhoto,setSelPhoto] = useState(null);
-  const [filterDay,setFilterDay] = useState(null);
-  const [dragging,setDragging] = useState(false);
-  const [chatOpen,setChatOpen] = useState(false);
-  const [msgs,setMsgs] = useState([{role:"assistant",content:"Hi! I know your full Portugal itinerary. Ask me anything — restaurant swaps, weather alternatives, local tips, day changes."}]);
-  const [chatIn,setChatIn] = useState("");
-  const [chatLoading,setChatLoading] = useState(false);
-  const [saved,setSaved] = useState(true);
-  const [showAddSection,setShowAddSection] = useState(false);
-  const [newSection,setNewSection] = useState({title:"",icon:"📍",type:"activity"});
-  const chatEnd = useRef();
-  const fileIn = useRef();
-  const saveTimer = useRef();
+/* ── MAIN APP ─────────────────────────────────── */
+function App(){
+  const loadState=()=>{try{const s=localStorage.getItem(LS_KEY);if(s){const p=JSON.parse(s);return{days:p.days||DAYS0,bookings:p.bookings||BOOK0};}}catch{}return{days:DAYS0,bookings:BOOK0};};
+  const init=loadState();
+  const [days,setDays]=useState(init.days);
+  const [bookings,setBookings]=useState(init.bookings);
+  const [photos,setPhotos]=useState([]);
+  const [tab,setTab]=useState("trip");
+  const [dayIdx,setDayIdx]=useState(0);
+  const [selPhoto,setSelPhoto]=useState(null);
+  const [filterDay,setFilterDay]=useState(null);
+  const [chatOpen,setChatOpen]=useState(false);
+  const [msgs,setMsgs]=useState([{role:"assistant",content:"Hi! I know your full Portugal itinerary. Ask me anything — restaurant swaps, weather alternatives, packing tips, day changes."}]);
+  const [chatIn,setChatIn]=useState("");
+  const [chatLoad,setChatLoad]=useState(false);
+  const [saved,setSaved]=useState(true);
+  const [secSh,setSecSh]=useState(false);
+  const [newSec,setNewSec]=useState({title:"",icon:"📍",type:"activity"});
+  const chatEnd=useRef();const fileRef=useRef();const saveTimer=useRef();
 
-  // Auto-save
   useEffect(()=>{
-    setSaved(false);
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(()=>{
-      try{ localStorage.setItem(LS_KEY,JSON.stringify({days,bookings})); setSaved(true); }catch(e){ console.error(e); }
+    setSaved(false);clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(()=>{
+      try{localStorage.setItem(LS_KEY,JSON.stringify({days,bookings}));setSaved(true);}catch{}
     },1000);
+    return()=>clearTimeout(saveTimer.current);
   },[days,bookings]);
 
-  useEffect(()=>{ chatEnd.current?.scrollIntoView({behavior:"smooth"}); },[msgs]);
+  useEffect(()=>{chatEnd.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
 
-  const cur = days[dayIdx];
-
-  // Day-level mutations
-  const updateSection = useCallback((dayId,secId,val)=>{
-    setDays(p=>p.map(d=>d.id!==dayId?d:{...d,sections:d.sections.map(s=>s.id!==secId?s:val)}));
-  },[]);
-
-  const deleteSection = useCallback((dayId,secId)=>{
-    setDays(p=>p.map(d=>d.id!==dayId?d:{...d,sections:d.sections.filter(s=>s.id!==secId)}));
-  },[]);
-
-  const addSection = (dayId)=>{
-    if(!newSection.title.trim()) return;
-    const blank = newSection.type==="logistics"
-      ? {id:uid(),...newSection,items:[{id:uid(),label:"",value:""}]}
-      : {id:uid(),...newSection,items:[]};
-    setDays(p=>p.map(d=>d.id!==dayId?d:{...d,sections:[...d.sections,blank]}));
-    setNewSection({title:"",icon:"📍",type:"activity"});
-    setShowAddSection(false);
+  const cur=days[dayIdx];
+  const updSec=useCallback((did,sid,val)=>setDays(p=>p.map(d=>d.id!==did?d:{...d,sections:d.sections.map(s=>s.id!==sid?s:val)})),[]);
+  const delSec=useCallback((did,sid)=>setDays(p=>p.map(d=>d.id!==did?d:{...d,sections:d.sections.filter(s=>s.id!==sid)})),[]);
+  const addSec=()=>{
+    if(!newSec.title.trim())return;
+    setDays(p=>p.map(d=>d.id!==cur.id?d:{...d,sections:[...d.sections,{...newSec,id:uid(),items:[]}]}));
+    setNewSec({title:"",icon:"📍",type:"activity"});setSecSh(false);
   };
-
-  const updateDayTitle = (dayId,val)=>setDays(p=>p.map(d=>d.id!==dayId?d:{...d,title:val}));
-
-  // Chat
-  const sendChat = async()=>{
-    if(!chatIn.trim()||chatLoading) return;
-    const msg=chatIn; setChatIn(""); setChatLoading(true);
-    setMsgs(p=>[...p,{role:"user",content:msg}]);
-    const history=[...msgs,{role:"user",content:msg}].map(m=>({role:m.role,content:m.content}));
-    const reply = await aiChat(msg,days,history.slice(0,-1));
-    setMsgs(p=>[...p,{role:"assistant",content:reply}]);
-    setChatLoading(false);
+  const sendChat=async()=>{
+    if(!chatIn.trim()||chatLoad)return;
+    const msg=chatIn;setChatIn("");setChatLoad(true);
+    const newMsgs=[...msgs,{role:"user",content:msg}];setMsgs(newMsgs);
+    const history=newMsgs.slice(0,-1).map(m=>({role:m.role,content:m.content}));
+    const reply=await aiChat(msg,days,history);
+    setMsgs(p=>[...p,{role:"assistant",content:reply||"Sorry, couldn't reach AI right now."}]);
+    setChatLoad(false);
   };
-
-  // Photos
-  const processFile = useCallback(async(file)=>{
-    if(!file.type.startsWith("image/")) return;
-    const url=URL.createObjectURL(file);
-    const id=Date.now()+Math.random();
+  const processFile=useCallback(async(file)=>{
+    if(!file.type.startsWith("image/"))return;
+    const url=URL.createObjectURL(file);const id=Date.now()+Math.random();
     setPhotos(p=>[...p,{id,url,loading:true}]);
     const b64=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.readAsDataURL(file);});
-    try{
-      const info=await aiPhoto(b64,file.type,days);
-      setPhotos(p=>p.map(ph=>ph.id!==id?ph:{...ph,loading:false,...info}));
-    }catch{
-      setPhotos(p=>p.map(ph=>ph.id!==id?ph:{...ph,loading:false,location:"Portugal",caption:"A beautiful moment.",mood:"golden"}));
-    }
+    try{const info=await aiPhoto(b64,file.type,days);setPhotos(p=>p.map(ph=>ph.id!==id?ph:{...ph,loading:false,...info}));}
+    catch{setPhotos(p=>p.map(ph=>ph.id!==id?ph:{...ph,loading:false,location:"Portugal",caption:"A beautiful moment."}));}
   },[days]);
+  const filtered=filterDay?photos.filter(p=>p.dayId===filterDay):photos;
 
-  const onDrop=useCallback(async e=>{
-    e.preventDefault();setDragging(false);
-    for(const f of Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith("image/"))) await processFile(f);
-  },[processFile]);
-
-  const filteredPhotos = filterDay?photos.filter(p=>p.dayId===filterDay):photos;
-  const TABS=[["itinerary","🗺 Itinerary"],["bookings",`📋 Bookings`],["photos",`📸 Photos${photos.length?` (${photos.length})`:""}`],["upload","＋ Add Photos"]];
-
-  return (
-    <div style={{fontFamily:"'EB Garamond',Georgia,serif",background:"#080808",minHeight:"100vh",color:"#E8DDD0"}}>
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",
+      paddingTop:"var(--top)",background:"var(--bg)"}}>
 
       {/* HEADER */}
-      <div style={{background:"#080808",borderBottom:"1px solid #151515",padding:"16px 20px 0",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(8px)"}}>
-        <div style={{maxWidth:980,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:6}}>
-            <div>
-              <div style={{fontSize:10,letterSpacing:4,color:"#C4974A",textTransform:"uppercase",marginBottom:2}}>July 3–12, 2026 · Algarve + Lisbon</div>
-              <h1 style={{fontSize:"clamp(16px,2.5vw,26px)",fontWeight:400,color:"#F5ECD8",letterSpacing:-.5}}>🇵🇹 Portugal <span style={{color:"#C4974A",fontStyle:"italic"}}>Complete Trip Guide</span></h1>
-            </div>
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{fontSize:11,color:saved?"#2D9E6B":"#555"}}>{saved?"✓ Saved":"Saving…"}</span>
-              <button onClick={()=>{ if(confirm("Reset all edits to original itinerary?")){ localStorage.removeItem(LS_KEY); setDays(INITIAL_DAYS); setBookings(INITIAL_BOOKINGS); }}} style={{background:"none",border:"1px solid #1a1a1a",borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:11,color:"#333"}}>Reset</button>
-              <button onClick={()=>setChatOpen(o=>!o)} style={{background:chatOpen?"#C4974A":"#12100a",border:`1px solid ${chatOpen?"#C4974A":"#2a2010"}`,borderRadius:18,padding:"6px 16px",cursor:"pointer",color:chatOpen?"#000":"#C4974A",fontSize:12,transition:"all .2s"}}>✦ AI {chatOpen?"▲":"▼"}</button>
-            </div>
+      <div style={{background:"var(--bg)",borderBottom:"1px solid var(--sep)",
+        padding:"14px 20px 0",flexShrink:0}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div>
+            <div style={{fontSize:11,color:"var(--gold)",fontWeight:800,letterSpacing:1.2,
+              textTransform:"uppercase",marginBottom:3}}>July 3–12, 2026</div>
+            <div style={{fontSize:22,fontWeight:800,color:"var(--t1)"}}>🇵🇹 Portugal</div>
           </div>
-          <div style={{display:"flex",gap:0,overflowX:"auto",scrollbarWidth:"none"}}>
-            {TABS.map(([id,label])=>(
-              <button key={id} onClick={()=>setTab(id)} style={{flexShrink:0,background:"none",border:"none",color:tab===id?"#C4974A":"#444",cursor:"pointer",padding:"8px 14px",fontSize:13,borderBottom:tab===id?"2px solid #C4974A":"2px solid transparent",whiteSpace:"nowrap"}}>{label}</button>
-            ))}
+          <div style={{display:"flex",gap:9,alignItems:"center"}}>
+            <div style={{fontSize:11,fontWeight:800,color:saved?"var(--green)":"var(--t3)"}}>
+              {saved?"✓ Saved":"Saving…"}</div>
+            <button onClick={()=>setChatOpen(o=>!o)}
+              style={{background:chatOpen?"var(--gold)":"var(--bg3)",borderRadius:22,
+                padding:"9px 18px",fontSize:14,fontWeight:800,
+                color:chatOpen?"#000":"var(--gold)",
+                border:`1.5px solid ${chatOpen?"var(--gold)":"transparent"}`}}>
+              ✦ AI</button>
           </div>
+        </div>
+        <div style={{display:"flex",gap:0}}>
+          {[["trip","🗺 Trip"],["bookings","📋 Book"],["photos","📸 Photos"]].map(([id,label])=>(
+            <button key={id} onClick={()=>setTab(id)}
+              style={{flex:1,padding:"10px 8px",fontSize:13,fontWeight:800,
+                color:tab===id?"var(--gold)":"var(--t3)",background:"none",border:"none",
+                borderBottom:`2.5px solid ${tab===id?"var(--gold)":"transparent"}`,transition:"all .15s"}}>
+              {label}</button>
+          ))}
         </div>
       </div>
 
       {/* AI CHAT */}
       {chatOpen&&(
-        <div style={{background:"#060604",borderBottom:"1px solid #181410",padding:"0 20px"}}>
-          <div style={{maxWidth:980,margin:"0 auto",padding:"12px 0"}}>
-            <div style={{background:"#0a0906",border:"1px solid #201810",borderRadius:12,overflow:"hidden"}}>
-              <div style={{padding:"12px 16px",maxHeight:200,overflowY:"auto"}}>
-                {msgs.map((m,i)=>(
-                  <div key={i} style={{display:"flex",gap:8,marginBottom:8,justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
-                    {m.role==="assistant"&&<div style={{color:"#C4974A",fontSize:14,flexShrink:0,marginTop:2}}>✦</div>}
-                    <div style={{maxWidth:"80%",background:m.role==="user"?"#1a1208":"#111",border:`1px solid ${m.role==="user"?"#C4974A22":"#1a1a1a"}`,borderRadius:10,padding:"8px 12px",fontSize:13,color:"#C8C0B8",lineHeight:1.65,whiteSpace:"pre-wrap"}}>{m.content}</div>
-                  </div>
-                ))}
-                {chatLoading&&<div style={{display:"flex",gap:8}}><div style={{color:"#C4974A"}}>✦</div><div style={{background:"#111",border:"1px solid #1a1a1a",borderRadius:10,padding:"8px 12px",fontSize:13,color:"#555"}}>Thinking…</div></div>}
-                <div ref={chatEnd}/>
+        <div style={{background:"var(--bg2)",borderBottom:"1px solid var(--sep)",flexShrink:0}}>
+          <div style={{padding:"14px 16px",maxHeight:"32vh",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+            {msgs.map((m,i)=>(
+              <div key={i} style={{display:"flex",gap:8,marginBottom:8,justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
+                {m.role==="assistant"&&<div style={{color:"var(--gold)",fontSize:16,flexShrink:0,marginTop:3}}>✦</div>}
+                <div style={{maxWidth:"82%",background:m.role==="user"?"var(--gold-dim)":"var(--bg3)",
+                  borderRadius:14,padding:"10px 14px",fontSize:14,color:"var(--t1)",
+                  lineHeight:1.55,whiteSpace:"pre-wrap",fontWeight:m.role==="user"?700:400}}>
+                  {m.content}</div>
               </div>
-              <div style={{borderTop:"1px solid #141414",padding:"8px 12px",display:"flex",gap:8}}>
-                <input value={chatIn} onChange={e=>setChatIn(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendChat()} placeholder="Ask anything — alternatives, tips, restaurant swaps…" style={{flex:1,background:"#0D0D0D",border:"1px solid #1e1e1e",borderRadius:7,padding:"7px 11px",color:"#E8DDD0",fontSize:13,fontFamily:"'EB Garamond',Georgia,serif",outline:"none"}}/>
-                <button onClick={sendChat} disabled={chatLoading||!chatIn.trim()} style={{background:chatLoading?"#222":"#C4974A",border:"none",borderRadius:7,padding:"7px 16px",cursor:"pointer",color:"#000",fontSize:13}}>Send</button>
-              </div>
-            </div>
+            ))}
+            {chatLoad&&<div style={{display:"flex",gap:8}}>
+              <div style={{color:"var(--gold)"}}>✦</div>
+              <div style={{background:"var(--bg3)",borderRadius:14,padding:"10px 14px",fontSize:14,color:"var(--t3)"}}>Thinking…</div>
+            </div>}
+            <div ref={chatEnd}/>
+          </div>
+          <div style={{borderTop:"1px solid var(--sep)",padding:"10px 14px",display:"flex",gap:8}}>
+            <input value={chatIn} onChange={e=>setChatIn(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&sendChat()} placeholder="Ask about your trip…"
+              style={{flex:1,background:"var(--bg3)",border:"none",borderRadius:22,
+                padding:"11px 16px",color:"var(--t1)",fontSize:15,outline:"none",fontWeight:600}}/>
+            <button onClick={sendChat} disabled={chatLoad||!chatIn.trim()}
+              style={{background:chatLoad||!chatIn.trim()?"var(--bg4)":"var(--gold)",
+                borderRadius:22,padding:"11px 20px",fontSize:18,fontWeight:800,
+                color:chatLoad||!chatIn.trim()?"var(--t3)":"#000",flexShrink:0}}>↑</button>
           </div>
         </div>
       )}
 
-      <div style={{maxWidth:980,margin:"0 auto",padding:"22px 20px"}}>
+      {/* CONTENT AREA */}
+      <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
 
-        {/* ── ITINERARY ── */}
-        {tab==="itinerary"&&(
+        {/* ══ TRIP ══ */}
+        {tab==="trip"&&(
           <div>
-            {/* Day selector */}
-            <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:14,marginBottom:18,scrollbarWidth:"none"}}>
+            {/* Day picker */}
+            <div style={{display:"flex",gap:8,overflowX:"auto",padding:"16px 16px 6px",scrollbarWidth:"none"}}>
               {days.map((d,i)=>(
-                <button key={d.id} onClick={()=>setDayIdx(i)} style={{flexShrink:0,background:dayIdx===i?d.theme:"#0f0f0f",border:`1px solid ${dayIdx===i?d.theme:"#1c1c1c"}`,borderRadius:8,padding:"9px 11px",cursor:"pointer",textAlign:"center",minWidth:62,transition:"all .2s"}}>
-                  <div style={{fontSize:17,marginBottom:2}}>{d.emoji}</div>
-                  <div style={{fontSize:10,color:dayIdx===i?"#fff":"#666",letterSpacing:.8,textTransform:"uppercase"}}>{d.date.split(" ")[1]}</div>
-                  <div style={{fontSize:8,color:dayIdx===i?"rgba(255,255,255,.65)":"#333",textTransform:"uppercase",marginTop:1}}>{d.label}</div>
+                <button key={d.id} onClick={()=>setDayIdx(i)}
+                  style={{flexShrink:0,background:dayIdx===i?d.theme:"var(--bg3)",
+                    borderRadius:16,padding:"11px 14px",textAlign:"center",minWidth:66,
+                    border:"none",transition:"all .2s",
+                    boxShadow:dayIdx===i?`0 4px 16px ${d.theme}44`:"none"}}>
+                  <div style={{fontSize:22,marginBottom:3}}>{d.emoji}</div>
+                  <div style={{fontSize:12,fontWeight:800,color:dayIdx===i?"#fff":"var(--t2)"}}>
+                    {d.date.split(" ")[1]}</div>
+                  <div style={{fontSize:9,fontWeight:700,letterSpacing:.5,textTransform:"uppercase",
+                    color:dayIdx===i?"rgba(255,255,255,.65)":"var(--t4)",marginTop:2}}>
+                    {d.label}</div>
                 </button>
               ))}
             </div>
 
             {/* Day header */}
-            <div style={{background:`linear-gradient(135deg,${cur.theme}1a,${cur.theme}06)`,border:`1px solid ${cur.theme}33`,borderRadius:12,padding:"16px 20px",marginBottom:18}} className="fade">
-              <div style={{fontSize:10,letterSpacing:4,color:cur.theme,textTransform:"uppercase",marginBottom:4}}>{cur.date} · {cur.day}</div>
-              <h2 style={{margin:0,fontSize:"clamp(14px,2.2vw,20px)",fontWeight:400,color:"#F0E8DC"}}>
-                <Editable value={cur.title} onChange={v=>updateDayTitle(cur.id,v)} style={{fontSize:"clamp(14px,2.2vw,20px)",color:"#F0E8DC"}}/>
-              </h2>
+            <div style={{margin:"12px 16px",background:`linear-gradient(135deg,${cur.theme}25,${cur.theme}08)`,
+              borderRadius:18,padding:"17px 20px",border:`1px solid ${cur.theme}30`}}>
+              <div style={{fontSize:11,color:cur.theme,fontWeight:800,letterSpacing:1.2,
+                textTransform:"uppercase",marginBottom:5}}>{cur.date} · {cur.day}</div>
+              <input value={cur.title}
+                onChange={e=>setDays(p=>p.map(d=>d.id!==cur.id?d:{...d,title:e.target.value}))}
+                style={{background:"none",border:"none",outline:"none",fontSize:19,
+                  fontWeight:800,color:"var(--t1)",width:"100%"}}/>
             </div>
 
             {/* Sections */}
-            {cur.sections.map(sec=>(
-              <div key={sec.id} className="fade" style={{marginBottom:18}}>
-                {sec.type==="logistics"
-                  ? <LogisticsSection section={sec} theme={cur.theme} dayId={cur.id}
-                      onUpdateSection={val=>updateSection(cur.id,sec.id,val)}
-                      onDeleteSection={()=>deleteSection(cur.id,sec.id)}/>
-                  : <ActivitySection section={sec} theme={cur.theme} dayCtx={`${cur.date} ${cur.day} — ${cur.title}`}
-                      onUpdateSection={val=>updateSection(cur.id,sec.id,val)}
-                      onDeleteSection={()=>deleteSection(cur.id,sec.id)}/>
-                }
-              </div>
-            ))}
+            <div style={{padding:"0 16px"}}>
+              {cur.sections.map(sec=>(
+                <div key={sec.id}>
+                  {sec.type==="logistics"
+                    ?<LogSec sec={sec}
+                        onUpdate={val=>updSec(cur.id,sec.id,val)}
+                        onDelete={()=>delSec(cur.id,sec.id)}/>
+                    :<ActSec sec={sec} theme={cur.theme}
+                        dayCtx={`${cur.date} ${cur.day} — ${cur.title}`}
+                        onUpdate={val=>updSec(cur.id,sec.id,val)}
+                        onDelete={()=>delSec(cur.id,sec.id)}/>
+                  }
+                </div>
+              ))}
+            </div>
 
-            {/* Add Section */}
-            <div style={{marginTop:8}}>
-              {!showAddSection
-                ? <button onClick={()=>setShowAddSection(true)} style={{width:"100%",background:"none",border:"1px dashed #1e1e1e",borderRadius:10,padding:"12px",cursor:"pointer",fontSize:12,color:"#333",textAlign:"center"}}>+ Add Section to {cur.date}</button>
-                : <div style={{background:"#0a0a0a",border:"1px solid #222",borderRadius:10,padding:"14px"}} className="fade">
-                    <div style={{fontSize:10,color:"#555",letterSpacing:2,textTransform:"uppercase",marginBottom:10}}>New Section</div>
-                    <div style={{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:8,marginBottom:10,alignItems:"center"}}>
-                      <input value={newSection.icon} onChange={e=>setNewSection(p=>({...p,icon:e.target.value}))} style={{width:44,background:"#111",border:"1px solid #1e1e1e",borderRadius:5,padding:"6px 8px",color:"#D4C8B8",fontSize:16,textAlign:"center",fontFamily:"'EB Garamond',Georgia,serif",outline:"none"}}/>
-                      <input value={newSection.title} onChange={e=>setNewSection(p=>({...p,title:e.target.value}))} placeholder="Section title (e.g. Afternoon, Morning Hike)" style={{background:"#111",border:"1px solid #1e1e1e",borderRadius:5,padding:"6px 10px",color:"#D4C8B8",fontSize:13,fontFamily:"'EB Garamond',Georgia,serif",outline:"none"}}/>
-                      <select value={newSection.type} onChange={e=>setNewSection(p=>({...p,type:e.target.value}))} style={{background:"#111",border:"1px solid #1e1e1e",borderRadius:5,padding:"6px 8px",color:"#888",fontSize:12,outline:"none"}}>
-                        <option value="activity">Activity</option>
-                        <option value="dinner">Dinner</option>
-                        <option value="logistics">Logistics</option>
-                      </select>
-                    </div>
-                    <div style={{display:"flex",gap:8}}>
-                      <button onClick={()=>addSection(cur.id)} disabled={!newSection.title.trim()} style={{background:newSection.title.trim()?"#C4974A":"#222",border:"none",borderRadius:6,padding:"7px 18px",cursor:newSection.title.trim()?"pointer":"not-allowed",color:newSection.title.trim()?"#000":"#555",fontSize:13}}>Add Section</button>
-                      <button onClick={()=>setShowAddSection(false)} style={{background:"none",border:"1px solid #222",borderRadius:6,padding:"7px 14px",cursor:"pointer",color:"#555",fontSize:13}}>Cancel</button>
-                    </div>
-                  </div>
-              }
+            {/* Add section button */}
+            <div style={{padding:"4px 16px 120px"}}>
+              <button onClick={()=>setSecSh(true)}
+                style={{width:"100%",background:"var(--bg3)",borderRadius:16,padding:"18px",
+                  fontSize:15,fontWeight:700,color:"var(--t3)",border:"1.5px dashed var(--sep)"}}>
+                + Add Section to {cur.date}</button>
             </div>
           </div>
         )}
 
-        {/* ── BOOKINGS ── */}
+        {/* ══ BOOKINGS ══ */}
         {tab==="bookings"&&(
-          <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <h2 style={{color:"#C4974A",fontSize:20,fontWeight:400}}>Booking Checklist</h2>
-              <button onClick={()=>setBookings(p=>[...p,{id:uid(),priority:"medium",when:"",night:"",name:"New booking",action:"",link:"",done:false}])} style={{background:"none",border:"1px solid #C4974A33",borderRadius:6,padding:"5px 14px",cursor:"pointer",fontSize:12,color:"#C4974A88"}}>+ Add</button>
+          <div style={{padding:"20px 16px 120px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontSize:24,fontWeight:800}}>Bookings</div>
+              <button
+                onClick={()=>setBookings(p=>[...p,{id:uid(),p:"medium",when:"",night:"",name:"New booking",action:"",link:"",done:false}])}
+                style={{background:"var(--gold-dim)",borderRadius:11,padding:"9px 16px",
+                  fontSize:14,fontWeight:800,color:"var(--gold)"}}>+ Add</button>
             </div>
-            <p style={{color:"#555",fontSize:13,marginBottom:24}}>Ocean Restaurant books 3 months out in summer — book today if you haven't.</p>
-            {["critical","high","medium"].map(p=>(
-              <div key={p} style={{marginBottom:26}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                  <div style={{width:7,height:7,borderRadius:"50%",background:PC[p]}}/>
-                  <div style={{fontSize:10,letterSpacing:3,color:PC[p],textTransform:"uppercase"}}>{PL[p]}</div>
+            {["critical","high","medium"].map(priority=>(
+              <div key={priority} style={{marginBottom:28}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                  <div style={{width:9,height:9,borderRadius:"50%",background:PC[priority]}}/>
+                  <div style={{fontSize:12,fontWeight:800,color:PC[priority],
+                    letterSpacing:1.5,textTransform:"uppercase"}}>{PL[priority]}</div>
                 </div>
-                {bookings.filter(b=>b.priority===p).map(item=>(
-                  <div key={item.id} style={{background:item.done?"#0a0a0a":"#0f0f0f",border:`1px solid ${item.done?"#111":"#1c1c1c"}`,borderLeft:`3px solid ${item.done?"#333":PC[p]}`,borderRadius:8,padding:"11px 14px",marginBottom:7,opacity:item.done?.6:1}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
-                      <div style={{flex:1}}>
-                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
-                          <input type="checkbox" checked={item.done} onChange={e=>setBookings(p=>p.map(b=>b.id!==item.id?b:{...b,done:e.target.checked}))} style={{accentColor:PC[item.priority],width:14,height:14,cursor:"pointer",flexShrink:0}}/>
-                          <div style={{fontSize:14,color:item.done?"#444":"#E0D8D0",textDecoration:item.done?"line-through":"none"}}>
-                            <Editable value={item.name} onChange={v=>setBookings(p=>p.map(b=>b.id!==item.id?b:{...b,name:v}))} style={{fontSize:14,color:item.done?"#444":"#E0D8D0"}}/>
-                          </div>
-                        </div>
-                        <div style={{fontSize:12,color:"#555",paddingLeft:22}}>
-                          📅 <Editable value={item.night} onChange={v=>setBookings(p=>p.map(b=>b.id!==item.id?b:{...b,night:v}))} style={{fontSize:12,color:"#555"}} placeholder="date"/>
-                          {" — "}
-                          <Editable value={item.action} onChange={v=>setBookings(p=>p.map(b=>b.id!==item.id?b:{...b,action:v}))} style={{fontSize:12,color:"#555"}} placeholder="action"/>
+                {bookings.filter(b=>b.p===priority).length===0&&(
+                  <div style={{fontSize:13,color:"var(--t4)",fontStyle:"italic",paddingLeft:4}}>None</div>
+                )}
+                {bookings.filter(b=>b.p===priority).map(item=>(
+                  <div key={item.id}
+                    style={{background:"var(--bg3)",borderRadius:16,padding:"15px 16px",marginBottom:10,
+                      borderLeft:`3.5px solid ${item.done?"var(--bg5)":PC[item.p]}`,
+                      opacity:item.done?.5:1,transition:"opacity .2s"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                      <input type="checkbox" checked={item.done}
+                        onChange={e=>setBookings(p=>p.map(b=>b.id!==item.id?b:{...b,done:e.target.checked}))}
+                        style={{width:22,height:22,marginTop:1,accentColor:PC[item.p],flexShrink:0,cursor:"pointer"}}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <input value={item.name}
+                          onChange={e=>setBookings(p=>p.map(b=>b.id!==item.id?b:{...b,name:e.target.value}))}
+                          style={{background:"none",border:"none",outline:"none",fontSize:15,fontWeight:800,
+                            color:"var(--t1)",textDecoration:item.done?"line-through":"none",width:"100%",marginBottom:4}}/>
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                          <input value={item.night}
+                            onChange={e=>setBookings(p=>p.map(b=>b.id!==item.id?b:{...b,night:e.target.value}))}
+                            placeholder="Date"
+                            style={{background:"none",border:"none",outline:"none",fontSize:13,
+                              color:"var(--t3)",width:70,fontFamily:"inherit",fontWeight:600}}/>
+                          <span style={{color:"var(--t4)"}}>·</span>
+                          <input value={item.action}
+                            onChange={e=>setBookings(p=>p.map(b=>b.id!==item.id?b:{...b,action:e.target.value}))}
+                            placeholder="How to book"
+                            style={{background:"none",border:"none",outline:"none",fontSize:13,
+                              color:"var(--t3)",flex:1,minWidth:80,fontFamily:"inherit"}}/>
                         </div>
                       </div>
-                      <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                        <select value={item.priority} onChange={e=>setBookings(p=>p.map(b=>b.id!==item.id?b:{...b,priority:e.target.value}))} style={{background:"#111",border:`1px solid ${PC[item.priority]}33`,borderRadius:5,padding:"3px 6px",color:PC[item.priority],fontSize:10,outline:"none",cursor:"pointer"}}>
-                          <option value="critical">BOOK NOW</option>
-                          <option value="high">BOOK SOON</option>
-                          <option value="medium">PLAN AHEAD</option>
-                        </select>
-                        {item.link&&<a href={item.link} target="_blank" rel="noreferrer" style={{fontSize:12,color:"#C4974A",background:"#1a1208",border:"1px solid #C4974A22",padding:"3px 9px",borderRadius:4}}>Book →</a>}
-                        <button onClick={()=>setBookings(p=>p.filter(b=>b.id!==item.id))} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:"#222",padding:"2px 4px"}}>×</button>
+                      <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-end",flexShrink:0}}>
+                        {item.link&&<a href={item.link} target="_blank" rel="noreferrer"
+                          style={{background:PC[item.p],color:"#fff",borderRadius:9,
+                            padding:"7px 13px",fontSize:12,fontWeight:800}}>Book →</a>}
+                        <button onClick={()=>setBookings(p=>p.filter(b=>b.id!==item.id))}
+                          style={{fontSize:20,color:"var(--t4)",lineHeight:1,padding:"0 2px"}}>×</button>
                       </div>
                     </div>
                   </div>
                 ))}
-                {bookings.filter(b=>b.priority===p).length===0&&<div style={{fontSize:12,color:"#2a2a2a",fontStyle:"italic",padding:"6px 0"}}>None</div>}
               </div>
             ))}
           </div>
         )}
 
-        {/* ── PHOTOS ── */}
+        {/* ══ PHOTOS ══ */}
         {tab==="photos"&&(
-          <div>
+          <div style={{padding:"16px 16px 120px"}}>
             {photos.length>0&&(
-              <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:12,marginBottom:18,scrollbarWidth:"none"}}>
-                <button onClick={()=>setFilterDay(null)} style={{flexShrink:0,background:!filterDay?"#C4974A":"#111",border:`1px solid ${!filterDay?"#C4974A":"#222"}`,borderRadius:18,padding:"4px 12px",cursor:"pointer",color:!filterDay?"#000":"#666",fontSize:12}}>All ({photos.length})</button>
+              <div style={{display:"flex",gap:8,overflowX:"auto",marginBottom:16,scrollbarWidth:"none"}}>
+                <button onClick={()=>setFilterDay(null)}
+                  style={{flexShrink:0,background:!filterDay?"var(--gold)":"var(--bg3)",
+                    borderRadius:20,padding:"7px 16px",fontSize:13,fontWeight:800,
+                    color:!filterDay?"#000":"var(--t2)"}}>All ({photos.length})</button>
                 {days.filter(d=>photos.some(p=>p.dayId===d.id)).map(d=>(
-                  <button key={d.id} onClick={()=>setFilterDay(d.id)} style={{flexShrink:0,background:filterDay===d.id?d.theme:"#111",border:`1px solid ${filterDay===d.id?d.theme:"#222"}`,borderRadius:18,padding:"4px 12px",cursor:"pointer",color:filterDay===d.id?"#fff":"#666",fontSize:12}}>{d.emoji} {d.date}</button>
+                  <button key={d.id} onClick={()=>setFilterDay(d.id)}
+                    style={{flexShrink:0,background:filterDay===d.id?d.theme:"var(--bg3)",
+                      borderRadius:20,padding:"7px 14px",fontSize:13,fontWeight:800,
+                      color:filterDay===d.id?"#fff":"var(--t2)"}}>
+                    {d.emoji} {d.date}</button>
                 ))}
               </div>
             )}
-            {filteredPhotos.length===0?(
-              <div style={{textAlign:"center",padding:"70px 20px"}}>
-                <div style={{fontSize:44,marginBottom:14}}>🌊</div>
-                <div style={{fontSize:18,color:"#333",fontStyle:"italic",marginBottom:6}}>No photos yet</div>
-                <div style={{fontSize:13,color:"#2a2a2a",marginBottom:20}}>Upload your Portugal memories — AI captions and tags them by day</div>
-                <button onClick={()=>setTab("upload")} style={{background:"#C4974A",color:"#000",border:"none",borderRadius:8,padding:"10px 22px",cursor:"pointer",fontSize:13}}>Add Photos →</button>
+            {filtered.length===0?(
+              <div style={{textAlign:"center",padding:"60px 20px"}}>
+                <div style={{fontSize:64,marginBottom:18}}>📸</div>
+                <div style={{fontSize:22,fontWeight:800,marginBottom:10}}>No Photos Yet</div>
+                <div style={{fontSize:15,color:"var(--t3)",marginBottom:28,lineHeight:1.5}}>
+                  Upload your Portugal memories — AI captions and tags them by day</div>
+                <button onClick={()=>fileRef.current.click()}
+                  style={{background:"var(--gold)",color:"#000",borderRadius:15,
+                    padding:"16px 32px",fontSize:16,fontWeight:800}}>Upload Photos</button>
+                <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}}
+                  onChange={async e=>{for(const f of Array.from(e.target.files))await processFile(f);e.target.value="";}}/>
               </div>
             ):(
-              <div style={{columns:"3 180px",gap:8}}>
-                {filteredPhotos.map(p=>{
-                  const d=days.find(x=>x.id===p.dayId);
-                  return(
-                    <div key={p.id} onClick={()=>setSelPhoto(p)} style={{breakInside:"avoid",marginBottom:8,borderRadius:9,overflow:"hidden",border:"1px solid #141414",cursor:"pointer",background:"#0a0908"}}>
-                      <div style={{position:"relative"}}>
-                        <img src={p.url} alt="" style={{width:"100%",display:"block",opacity:p.loading?.5:1}}/>
-                        {p.loading&&<div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#00000080"}}><div style={{fontSize:18}}>✨</div><div style={{fontSize:9,color:"#C4974A",letterSpacing:2,marginTop:4}}>ANALYZING</div></div>}
-                        {!p.loading&&d&&<div style={{position:"absolute",top:6,left:6,background:d.theme+"dd",borderRadius:4,padding:"2px 7px",fontSize:9,color:"#fff"}}>{d.emoji} {d.date}</div>}
-                        <button onClick={e=>{e.stopPropagation();setPhotos(px=>px.filter(x=>x.id!==p.id));}} style={{position:"absolute",top:6,right:6,background:"#000000aa",border:"none",color:"#fff",borderRadius:"50%",width:22,height:22,cursor:"pointer",fontSize:12,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              <>
+                <div style={{columns:"2",columnGap:10}}>
+                  {filtered.map(p=>{
+                    const d=days.find(x=>x.id===p.dayId);
+                    return(
+                      <div key={p.id} onClick={()=>setSelPhoto(p)}
+                        style={{breakInside:"avoid",marginBottom:10,borderRadius:16,
+                          overflow:"hidden",background:"var(--bg3)",cursor:"pointer"}}>
+                        <div style={{position:"relative"}}>
+                          <img src={p.url} alt="" style={{width:"100%",display:"block",opacity:p.loading?.35:1}}/>
+                          {p.loading&&<div style={{position:"absolute",inset:0,display:"flex",
+                            alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,.6)"}}>
+                            <div className="spin"/></div>}
+                          {!p.loading&&d&&<div style={{position:"absolute",top:8,left:8,
+                            background:d.theme+"ee",borderRadius:7,padding:"3px 9px",
+                            fontSize:10,fontWeight:800,color:"#fff"}}>{d.date}</div>}
+                          <button onClick={e=>{e.stopPropagation();setPhotos(px=>px.filter(x=>x.id!==p.id));}}
+                            style={{position:"absolute",top:8,right:8,background:"rgba(0,0,0,.7)",
+                              borderRadius:"50%",width:26,height:26,fontSize:14,color:"#fff",
+                              display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800}}>×</button>
+                        </div>
+                        {!p.loading&&p.caption&&(
+                          <div style={{padding:"9px 11px",fontSize:12,color:"var(--t2)",
+                            lineHeight:1.45,fontStyle:"italic"}}>"{p.caption}"</div>
+                        )}
                       </div>
-                      {!p.loading&&<div style={{padding:"8px 10px"}}>
-                        {p.location&&<div style={{fontSize:10,color:"#C4974A",marginBottom:2}}>📍 {p.location}</div>}
-                        {p.caption&&<div style={{fontSize:12,color:"#C8C0B8",lineHeight:1.5,fontStyle:"italic"}}>"{p.caption}"</div>}
-                      </div>}
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+                <button onClick={()=>fileRef.current.click()}
+                  style={{width:"100%",background:"var(--bg3)",borderRadius:16,padding:"18px",
+                    fontSize:15,fontWeight:700,color:"var(--t3)",border:"1.5px dashed var(--sep)",marginTop:4}}>
+                  + Add More Photos</button>
+                <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}}
+                  onChange={async e=>{for(const f of Array.from(e.target.files))await processFile(f);e.target.value="";}}/>
+              </>
             )}
-          </div>
-        )}
-
-        {/* ── UPLOAD ── */}
-        {tab==="upload"&&(
-          <div>
-            <div onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={onDrop} onClick={()=>fileIn.current.click()} style={{border:`2px dashed ${dragging?"#C4974A":"#1e1e1e"}`,borderRadius:14,padding:"50px 40px",textAlign:"center",cursor:"pointer",background:dragging?"#12100a":"#0a0908",transition:"all .3s",marginBottom:20}}>
-              <div style={{fontSize:40,marginBottom:12}}>📸</div>
-              <div style={{fontSize:16,color:"#C4974A",marginBottom:4,fontStyle:"italic"}}>Drop photos here</div>
-              <div style={{fontSize:12,color:"#333",marginBottom:16}}>or click to browse · multiple at once</div>
-              <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap"}}>
-                {["📍 Auto-tagged","✍️ AI captions","🏛 Landmark ID","💡 Tips"].map(f=><div key={f} style={{fontSize:11,color:"#444",background:"#111",padding:"3px 10px",borderRadius:18,border:"1px solid #1e1e1e"}}>{f}</div>)}
-              </div>
-              <input ref={fileIn} type="file" accept="image/*" multiple style={{display:"none"}} onChange={async e=>{for(const f of Array.from(e.target.files)) await processFile(f); e.target.value="";}}/>
-            </div>
           </div>
         )}
       </div>
 
-      {/* PHOTO MODAL */}
-      {selPhoto&&(
-        <div onClick={()=>setSelPhoto(null)} style={{position:"fixed",inset:0,background:"#000000f0",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"#0a0908",borderRadius:14,overflow:"hidden",maxWidth:700,width:"100%",maxHeight:"90vh",overflowY:"auto",border:"1px solid #1e1e1e"}}>
-            <div style={{position:"relative"}}>
-              <img src={selPhoto.url} alt="" style={{width:"100%",maxHeight:340,objectFit:"cover",display:"block"}}/>
-              <button onClick={()=>setSelPhoto(null)} style={{position:"absolute",top:10,right:10,background:"#000000cc",border:"none",color:"#fff",borderRadius:"50%",width:28,height:28,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-              {(()=>{ const d=days.find(x=>x.id===selPhoto.dayId); return d?<div style={{position:"absolute",bottom:10,left:10,background:d.theme+"ee",borderRadius:6,padding:"3px 10px",fontSize:11,color:"#fff"}}>{d.emoji} {d.date} · {d.title}</div>:null; })()}
-            </div>
-            <div style={{padding:"18px 22px"}}>
-              {selPhoto.location&&<div style={{fontSize:12,color:"#C4974A",marginBottom:8}}>📍 {selPhoto.location}</div>}
-              {selPhoto.caption&&<p style={{fontSize:15,color:"#F0E8DC",fontStyle:"italic",lineHeight:1.65,marginBottom:12}}>"{selPhoto.caption}"</p>}
-              {selPhoto.story&&<div style={{marginBottom:14}}><div style={{fontSize:9,letterSpacing:3,color:"#333",textTransform:"uppercase",marginBottom:5}}>Travel Journal</div><p style={{fontSize:13,color:"#A09890",lineHeight:1.85,margin:0}}>{selPhoto.story}</p></div>}
-              {selPhoto.tips?.length>0&&<div style={{background:"#111",borderRadius:8,padding:"12px 14px"}}><div style={{fontSize:9,letterSpacing:3,color:"#C4974A",textTransform:"uppercase",marginBottom:8}}>💡 Tips</div>{selPhoto.tips.map((t,i)=><div key={i} style={{display:"flex",gap:8,marginBottom:i<selPhoto.tips.length-1?6:0}}><div style={{color:"#C4974A",flexShrink:0}}>→</div><div style={{fontSize:12,color:"#907880",lineHeight:1.6}}>{t}</div></div>)}</div>}
-            </div>
-          </div>
+      {/* BOTTOM TAB BAR */}
+      <div style={{background:"rgba(13,13,13,.97)",borderTop:"1px solid var(--sep)",
+        display:"flex",justifyContent:"space-around",alignItems:"center",
+        padding:"10px 0",paddingBottom:"calc(10px + var(--bot))",flexShrink:0,
+        backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)"}}>
+        {[["trip","🗺","Trip"],["bookings","📋","Book"],["photos","📸","Photos"]].map(([id,icon,label])=>(
+          <button key={id} onClick={()=>setTab(id)}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",
+              gap:3,padding:"4px 24px",border:"none",background:"none"}}>
+            <div style={{fontSize:24}}>{icon}</div>
+            <div style={{fontSize:10,fontWeight:800,
+              color:tab===id?"var(--gold)":"var(--t3)",letterSpacing:.4}}>
+              {label}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* ADD SECTION SHEET */}
+      <Sheet open={secSh} onClose={()=>setSecSh(false)} title="Add Section">
+        <div style={{display:"grid",gridTemplateColumns:"58px 1fr",gap:12,marginBottom:16}}>
+          <input value={newSec.icon} onChange={e=>setNewSec(p=>({...p,icon:e.target.value}))}
+            style={{background:"var(--bg4)",border:"none",borderRadius:11,padding:"12px",
+              fontSize:26,textAlign:"center",outline:"none",color:"var(--t1)"}}/>
+          <input value={newSec.title} onChange={e=>setNewSec(p=>({...p,title:e.target.value}))}
+            placeholder="Section title"
+            style={{background:"var(--bg4)",border:"none",borderRadius:11,padding:"13px 14px",
+              fontSize:15,fontWeight:700,outline:"none",color:"var(--t1)"}}/>
         </div>
-      )}
+        <div style={{marginBottom:8,fontSize:11,color:"var(--t3)",textTransform:"uppercase",
+          letterSpacing:.9,fontWeight:800}}>Type</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:24}}>
+          {["activity","dinner","logistics"].map(t=>(
+            <button key={t} onClick={()=>setNewSec(p=>({...p,type:t}))}
+              style={{background:newSec.type===t?"var(--gold)":"var(--bg4)",borderRadius:11,
+                padding:"13px 8px",fontSize:13,fontWeight:800,
+                color:newSec.type===t?"#000":"var(--t2)",textTransform:"capitalize"}}>{t}</button>
+          ))}
+        </div>
+        <button onClick={addSec} disabled={!newSec.title.trim()}
+          style={{width:"100%",background:newSec.title.trim()?"var(--gold)":"var(--bg4)",
+            borderRadius:13,padding:"16px",fontSize:16,fontWeight:800,
+            color:newSec.title.trim()?"#000":"var(--t3)"}}>Add Section</button>
+      </Sheet>
+
+      {/* PHOTO DETAIL SHEET */}
+      <Sheet open={!!selPhoto} onClose={()=>setSelPhoto(null)} title={selPhoto?.location||"Photo"}>
+        {selPhoto&&<>
+          <img src={selPhoto.url} alt="" style={{width:"100%",borderRadius:14,
+            maxHeight:260,objectFit:"cover",marginBottom:16,display:"block"}}/>
+          {selPhoto.caption&&<p style={{fontSize:17,color:"var(--t1)",fontStyle:"italic",
+            lineHeight:1.65,marginBottom:14,fontWeight:600}}>"{selPhoto.caption}"</p>}
+          {selPhoto.story&&<p style={{fontSize:14,color:"var(--t2)",lineHeight:1.75,marginBottom:14}}>{selPhoto.story}</p>}
+          {selPhoto.tips?.length>0&&<div style={{background:"var(--bg4)",borderRadius:14,padding:"14px 16px"}}>
+            <div style={{fontSize:11,color:"var(--gold)",textTransform:"uppercase",
+              letterSpacing:1.2,fontWeight:800,marginBottom:10}}>💡 Tips</div>
+            {selPhoto.tips.map((t,i)=>(
+              <div key={i} style={{display:"flex",gap:10,marginBottom:i<selPhoto.tips.length-1?8:0}}>
+                <span style={{color:"var(--gold)",fontWeight:800}}>→</span>
+                <span style={{fontSize:14,color:"var(--t2)",lineHeight:1.5}}>{t}</span>
+              </div>
+            ))}
+          </div>}
+        </>}
+      </Sheet>
+
+      {/* RESET */}
+      <button onClick={()=>{if(confirm("Reset everything to original itinerary?")){
+        localStorage.removeItem(LS_KEY);setDays(DAYS0);setBookings(BOOK0);}}}
+        style={{position:"fixed",bottom:"calc(72px + var(--bot))",right:16,
+          background:"var(--bg3)",borderRadius:20,padding:"7px 13px",
+          fontSize:11,fontWeight:800,color:"var(--t3)",border:"1px solid var(--sep)",zIndex:100}}>
+        Reset</button>
     </div>
   );
 }
-
 ReactDOM.createRoot(document.getElementById("app")).render(<App/>);
 </script>
 </body>
